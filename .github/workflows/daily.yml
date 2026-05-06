@@ -38,10 +38,19 @@ jobs:
           git add data/quotidien.csv output/
           if git diff --staged --quiet; then
             echo "Aucun changement à committer."
-          else
-            git commit -m "MAJ quotidienne $(date -u +%Y-%m-%d)"
-            git push
+            exit 0
           fi
+          git commit -m "MAJ quotidienne $(date -u +%Y-%m-%d)"
+          # Retry pour gérer le cas où un autre push a eu lieu pendant le job
+          for tentative in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "Push refusé (tentative $tentative) — rebase puis nouvelle tentative."
+            git pull --rebase --autostash origin main
+          done
+          echo "Échec du push après 3 tentatives." >&2
+          exit 1
 
       - uses: actions/upload-pages-artifact@v3
         with:
