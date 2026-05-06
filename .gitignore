@@ -1,0 +1,11 @@
+# Fichiers bruts téléchargés (regénérables, parfois volumineux)
+data/raw/
+
+# Caches Python
+__pycache__/
+*.pyc
+
+# Éditeurs
+.vscode/
+.idea/
+.DS_Store

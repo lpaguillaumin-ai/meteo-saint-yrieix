@@ -1,0 +1,58 @@
+name: Mise à jour quotidienne
+
+on:
+  schedule:
+    # 07h00 UTC = 09h00 heure française en été, 08h00 en hiver
+    - cron: '0 7 * * *'
+  workflow_dispatch:  # permet aussi un déclenchement manuel depuis l'onglet Actions
+
+permissions:
+  contents: write   # pour committer data/quotidien.csv et output/
+  pages: write      # pour publier sur GitHub Pages
+  id-token: write   # requis par actions/deploy-pages
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Téléchargement données du jour
+        run: python download.py
+
+      - name: Génération du tableau de bord
+        run: python dashboard.py
+
+      - name: Commit des fichiers à jour
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/quotidien.csv output/
+          if git diff --staged --quiet; then
+            echo "Aucun changement à committer."
+          else
+            git commit -m "MAJ quotidienne $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: output
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

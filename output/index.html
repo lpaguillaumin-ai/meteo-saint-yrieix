@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Météo St-Yrieix · Mai 2026</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #1a1f26;
+    --bg-carte: #232a33;
+    --bg-section: #1f252d;
+    --texte: #e6e9ec;
+    --texte-doux: #9aa3ad;
+    --accent: #4ea1ff;
+    --accent-pluie: #4ea1ff;
+    --accent-tx: #e74c3c;
+    --accent-tn: #5dade2;
+    --bord: #2c333d;
+    --hausse: #f39c12;
+    --baisse: #56b85e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--texte);
+    max-width: 980px; margin-inline: auto;
+  }
+  header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 24px; font-weight: 600; }
+  h1 small { color: var(--texte-doux); font-weight: 400; font-size: 14px; display: block; margin-top: 4px; }
+  .edition { color: var(--texte-doux); font-size: 13px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .kpi { background: var(--bg-carte); border: 1px solid var(--bord); border-radius: 6px; padding: 14px 16px; }
+  .kpi-titre { color: var(--texte-doux); font-size: 13px; }
+  .kpi-valeur { font-size: 24px; font-weight: 600; margin: 4px 0; }
+  .kpi-cmp { font-size: 12px; color: var(--texte-doux); }
+  .tendance-up::before { content: "↗ "; color: var(--hausse); }
+  .tendance-down::before { content: "↘ "; color: var(--baisse); }
+  .section { background: var(--bg-section); border: 1px solid var(--bord); border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+  .section h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--texte-doux); text-transform: uppercase; letter-spacing: 0.5px; }
+  .legende { display: flex; gap: 16px; font-size: 13px; margin-bottom: 8px; color: var(--texte-doux); }
+  .legende span::before { content: "■"; margin-right: 4px; }
+  .leg-pluie::before { color: var(--accent-pluie); }
+  .leg-tx::before { color: var(--accent-tx); }
+  .leg-tn::before { color: var(--accent-tn); }
+  .leg-norm::before { color: #555e6b; }
+  canvas { max-height: 360px; }
+  @media (max-width: 720px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mai 2026 — Saint-Yrieix-la-Perche
+    <small>Saint-Yrieix-la-Perche · Station 87187003 · alt. 404 m · 4 jours</small>
+  </h1>
+  <div class="edition">Édité le 06/05/2026</div>
+</header>
+
+<div class="kpis">
+        <div class="kpi">
+          <div class="kpi-titre">Cumul pluie</div>
+          <div class="kpi-valeur">42.2 mm</div>
+          <div class="kpi-cmp tendance-down">-58% / normale ≈ 102 mm</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-titre">T° moyenne</div>
+          <div class="kpi-valeur">15.3 °C</div>
+          <div class="kpi-cmp tendance-up">+1.3 °C / normale ≈ 14.0 °C</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-titre">Vent max</div>
+          <div class="kpi-valeur">43.2 km/h</div>
+          <div class="kpi-cmp tendance-flat">02/05 · S</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-titre">Insolation</div>
+          <div class="kpi-valeur">15 h</div>
+          <div class="kpi-cmp tendance-down">normale ≈ 153 h</div>
+        </div>
+</div>
+
+<div class="section">
+  <h2>Détail jour par jour — Mai 2026</h2>
+  <div class="legende">
+    <span class="leg-pluie">Précipitations (mm)</span>
+    <span class="leg-tx">T° max (°C)</span>
+    <span class="leg-tn">T° min (°C)</span>
+  </div>
+  <canvas id="detail"></canvas>
+</div>
+
+<div class="section">
+  <h2>Climogramme 2026 — pluie et température</h2>
+  <div class="legende">
+    <span class="leg-pluie">Pluie 2026 (mm)</span>
+    <span class="leg-norm">Normale 1995-2024 (mm)</span>
+    <span class="leg-tx">T° moyenne (°C)</span>
+  </div>
+  <canvas id="climo"></canvas>
+</div>
+
+<script>
+const DATA = {"climogramme": {"labels": ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."], "rr_reel": [125.6, 239.6, 40.4, 18.0, 42.2, 0, 0, 0, 0, 0, 0, 0], "rr_norm": [111.7, 92.5, 92.8, 100.9, 101.6, 83.6, 60.4, 70.4, 77.8, 93.3, 124.8, 123.6], "t_reel": [4.1, 8.0, 8.2, 13.3, 15.3, null, null, null, null, null, null, null], "t_norm": [4.4, 5.2, 8.1, 10.5, 14.0, 17.6, 19.4, 19.4, 16.1, 12.9, 7.7, 5.2]}, "detail_mois": {"labels": ["01", "02", "03", "04"], "rr": [0.6, 0.4, 31.6, 9.6], "tx": [21.0, 21.2, 21.3, 19.6], "tn": [8.4, 8.8, 11.7, 10.6]}};
+Chart.defaults.color = '#9aa3ad';
+Chart.defaults.borderColor = '#2c333d';
+
+new Chart(document.getElementById('detail'), {
+  type: 'bar',
+  data: {
+    labels: DATA.detail_mois.labels,
+    datasets: [
+      { label: 'Pluie (mm)', data: DATA.detail_mois.rr, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 2 },
+      { label: 'T° max (°C)', data: DATA.detail_mois.tx, type: 'line', borderColor: '#e74c3c', backgroundColor: '#e74c3c', tension: 0.25, yAxisID: 'y1', order: 1 },
+      { label: 'T° min (°C)', data: DATA.detail_mois.tn, type: 'line', borderColor: '#5dade2', backgroundColor: '#5dade2', borderDash: [4,4], tension: 0.25, yAxisID: 'y1', order: 1 },
+    ],
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y:  { position: 'left',  title: { display: true, text: 'mm' } },
+      y1: { position: 'right', title: { display: true, text: '°C' }, grid: { drawOnChartArea: false } },
+    },
+  }
+});
+
+new Chart(document.getElementById('climo'), {
+  data: {
+    labels: DATA.climogramme.labels,
+    datasets: [
+      { type: 'bar', label: 'Pluie observée', data: DATA.climogramme.rr_reel, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 3 },
+      { type: 'bar', label: 'Pluie normale',  data: DATA.climogramme.rr_norm, backgroundColor: '#3a4452', yAxisID: 'y', order: 4 },
+      { type: 'line', label: 'T° moyenne',    data: DATA.climogramme.t_reel, borderColor: '#e74c3c', backgroundColor: '#e74c3c', tension: 0.3, yAxisID: 'y1', order: 1, spanGaps: true },
+      { type: 'line', label: 'T° normale',    data: DATA.climogramme.t_norm, borderColor: '#9aa3ad', borderDash: [5,5], tension: 0.3, yAxisID: 'y1', order: 2, pointRadius: 0 },
+    ],
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y:  { position: 'left',  title: { display: true, text: 'mm cumulés' } },
+      y1: { position: 'right', title: { display: true, text: '°C' }, grid: { drawOnChartArea: false } },
+    },
+  }
+});
+</script>
+</body>
+</html>

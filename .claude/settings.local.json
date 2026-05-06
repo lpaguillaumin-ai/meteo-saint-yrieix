@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.data.gouv.fr)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s \"https://www.data.gouv.fr/api/1/datasets/donnees-climatologiques-de-base-quotidiennes/\" -o quot.json)",
+      "Bash(node -e ' *)",
+      "WebFetch(domain:static.data.gouv.fr)",
+      "Bash(curl -sL -o data/raw/Q_87_latest_RR-T-Vent.csv.gz \"https://www.data.gouv.fr/api/1/datasets/r/e7c25f1a-e0bc-4c9b-ba3c-1dca6b6ad8a2\")",
+      "Bash(curl -sL -o data/raw/Q_87_latest_autres.csv.gz \"https://www.data.gouv.fr/api/1/datasets/r/0bce6ef5-dcba-4d40-803c-e943ed92c88e\")",
+      "Bash(gunzip -k -f Q_87_latest_RR-T-Vent.csv.gz Q_87_latest_autres.csv.gz)"
+    ]
+  }
+}
