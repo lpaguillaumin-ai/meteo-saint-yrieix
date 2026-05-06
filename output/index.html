@@ -7,18 +7,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
-    --bg: #1a1f26;
-    --bg-carte: #232a33;
-    --bg-section: #1f252d;
-    --texte: #e6e9ec;
-    --texte-doux: #9aa3ad;
-    --accent: #4ea1ff;
-    --accent-pluie: #4ea1ff;
-    --accent-tx: #e74c3c;
-    --accent-tn: #5dade2;
-    --bord: #2c333d;
-    --hausse: #f39c12;
-    --baisse: #56b85e;
+    --bg: #1a1f26; --bg-carte: #232a33; --bg-section: #1f252d;
+    --texte: #e6e9ec; --texte-doux: #9aa3ad;
+    --accent-pluie: #4ea1ff; --accent-tx: #e74c3c; --accent-tn: #5dade2;
+    --bord: #2c333d; --hausse: #f39c12; --baisse: #56b85e;
   }
   * { box-sizing: border-box; }
   body {
@@ -27,29 +19,84 @@
     background: var(--bg); color: var(--texte);
     max-width: 980px; margin-inline: auto;
   }
-  header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end;
+            gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
   h1 { margin: 0; font-size: 24px; font-weight: 600; }
-  h1 small { color: var(--texte-doux); font-weight: 400; font-size: 14px; display: block; margin-top: 4px; }
+  h1 small { color: var(--texte-doux); font-weight: 400; font-size: 14px;
+              display: block; margin-top: 4px; }
   .edition { color: var(--texte-doux); font-size: 13px; }
-  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-  .kpi { background: var(--bg-carte); border: 1px solid var(--bord); border-radius: 6px; padding: 14px 16px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .kpi { background: var(--bg-carte); border: 1px solid var(--bord);
+          border-radius: 6px; padding: 14px 16px; min-width: 0; }
   .kpi-titre { color: var(--texte-doux); font-size: 13px; }
-  .kpi-valeur { font-size: 24px; font-weight: 600; margin: 4px 0; }
+  .kpi-valeur { font-size: 24px; font-weight: 600; margin: 4px 0;
+                 word-break: break-word; }
   .kpi-cmp { font-size: 12px; color: var(--texte-doux); }
-  .tendance-up::before { content: "↗ "; color: var(--hausse); }
+  .tendance-up::before  { content: "↗ "; color: var(--hausse); }
   .tendance-down::before { content: "↘ "; color: var(--baisse); }
-  .section { background: var(--bg-section); border: 1px solid var(--bord); border-radius: 6px; padding: 16px; margin-bottom: 16px; }
-  .section h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--texte-doux); text-transform: uppercase; letter-spacing: 0.5px; }
-  .legende { display: flex; gap: 16px; font-size: 13px; margin-bottom: 8px; color: var(--texte-doux); }
+  /* Onglets */
+  .tabs { display: flex; gap: 4px; margin-bottom: 0; flex-wrap: wrap; }
+  .tab-btn { background: var(--bg-carte); color: var(--texte-doux);
+              border: 1px solid var(--bord); border-bottom: none;
+              padding: 8px 14px; border-radius: 6px 6px 0 0;
+              cursor: pointer; font-size: 13px; font-family: inherit; }
+  .tab-btn.actif { background: var(--bg-section); color: var(--texte); }
+  .panneau { background: var(--bg-section); border: 1px solid var(--bord);
+              border-radius: 0 6px 6px 6px; padding: 16px; }
+  .panneau:not(.actif) { display: none; }
+  .panneau h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600;
+                 color: var(--texte-doux); text-transform: uppercase; letter-spacing: 0.5px; }
+  .panneau h2:not(:first-child) { margin-top: 24px; }
+  .legende { display: flex; gap: 16px; font-size: 13px; margin-bottom: 8px;
+              color: var(--texte-doux); flex-wrap: wrap; }
   .legende span::before { content: "■"; margin-right: 4px; }
   .leg-pluie::before { color: var(--accent-pluie); }
-  .leg-tx::before { color: var(--accent-tx); }
-  .leg-tn::before { color: var(--accent-tn); }
-  .leg-norm::before { color: #555e6b; }
+  .leg-tx::before    { color: var(--accent-tx); }
+  .leg-tn::before    { color: var(--accent-tn); }
+  .leg-norm::before  { color: #555e6b; }
+  .leg-bilan::before { color: #56b85e; }
   canvas { max-height: 360px; }
+  /* Heatmap */
+  .heatmap-wrapper { overflow: hidden; }
+  .heatmap-scroll { overflow-x: auto; padding-bottom: 6px; }
+  .hm-mois-row { display: grid; margin-left: 32px; font-size: 11px;
+                  color: var(--texte-doux); margin-bottom: 4px; }
+  .hm-grid { display: flex; gap: 4px; }
+  .hm-jours { display: grid; grid-template-rows: repeat(7, 14px); gap: 2px;
+               font-size: 10px; color: var(--texte-doux); padding-right: 4px; }
+  .hm-jours span { line-height: 14px; }
+  .hm-cols { display: flex; gap: 2px; }
+  .hm-col { display: grid; grid-template-rows: repeat(7, 14px); gap: 2px; }
+  .hm-cell { width: 14px; height: 14px; border-radius: 2px; }
+  .hm-cell.hm-vide { background: transparent; }
+  .hm-mois { grid-row: 1; }
+  .hm-legende { display: flex; align-items: center; gap: 6px;
+                 margin-top: 10px; font-size: 11px; color: var(--texte-doux); }
+  .hm-grad { flex: 0 0 120px; height: 8px; border-radius: 2px;
+              background: linear-gradient(to right, #1f4068, #3a73a8, #9aa3ad, #e8995c, #c0392b); }
+
+  /* ── Mobile ── */
   @media (max-width: 720px) {
     .kpis { grid-template-columns: repeat(2, 1fr); }
-    header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    canvas { max-height: 280px; }
+  }
+  @media (max-width: 480px) {
+    body { padding: 12px; }
+    h1 { font-size: 18px; }
+    h1 small { font-size: 12px; }
+    .edition { font-size: 11px; }
+    .kpis { gap: 8px; }
+    .kpi { padding: 10px 12px; }
+    .kpi-titre { font-size: 11px; }
+    .kpi-valeur { font-size: 18px; }
+    .kpi-cmp { font-size: 11px; }
+    .tab-btn { padding: 6px 10px; font-size: 12px; flex: 1 1 auto; text-align: center; }
+    .panneau { padding: 12px; border-radius: 0 0 6px 6px; }
+    .panneau h2 { font-size: 12px; }
+    .legende { font-size: 11px; gap: 8px; }
+    canvas { max-height: 240px; }
+    .hm-cell { width: 11px; height: 11px; }
+    .hm-jours, .hm-col { grid-template-rows: repeat(7, 11px); }
   }
 </style>
 </head>
@@ -87,7 +134,13 @@
         </div>
 </div>
 
-<div class="section">
+<div class="tabs" role="tablist">
+  <button class="tab-btn actif" data-cible="mois">Mois en cours</button>
+  <button class="tab-btn"       data-cible="bilan">Bilan hydrique</button>
+  <button class="tab-btn"       data-cible="heatmap">Heatmap T° max</button>
+</div>
+
+<div id="mois" class="panneau actif">
   <h2>Détail jour par jour — Mai 2026</h2>
   <div class="legende">
     <span class="leg-pluie">Précipitations (mm)</span>
@@ -95,9 +148,7 @@
     <span class="leg-tn">T° min (°C)</span>
   </div>
   <canvas id="detail"></canvas>
-</div>
 
-<div class="section">
   <h2>Climogramme 2026 — pluie et température</h2>
   <div class="legende">
     <span class="leg-pluie">Pluie 2026 (mm)</span>
@@ -107,10 +158,48 @@
   <canvas id="climo"></canvas>
 </div>
 
+<div id="bilan" class="panneau">
+  <h2>Bilan hydrique 2026 — P − ETP cumulée depuis le 1er janvier</h2>
+  <div class="legende">
+    <span class="leg-bilan">2026 (mm)</span>
+    <span class="leg-norm">Référence 1995-2024 (mm)</span>
+  </div>
+  <canvas id="bilan_chart"></canvas>
+  <p style="font-size:12px;color:var(--texte-doux);margin-top:8px">
+    ETP calculée par la formule de Hargreaves-Samani (latitude 45.514°,
+    rayonnement extra-terrestre FAO-56). Une valeur positive indique un excédent
+    hydrique cumulé, négative un déficit.
+  </p>
+</div>
+
+<div id="heatmap" class="panneau">
+  <h2>T° max — 12 mois glissants (05/05/2025 → 04/05/2026)</h2>
+  
+    <div class="heatmap-wrapper">
+      <div class="heatmap-scroll">
+        <div class="hm-mois-row" style="grid-template-columns:repeat(53,14px)">
+          <div class="hm-mois" style="grid-column:1">mai</div><div class="hm-mois" style="grid-column:5">juin</div><div class="hm-mois" style="grid-column:10">juil.</div><div class="hm-mois" style="grid-column:14">août</div><div class="hm-mois" style="grid-column:18">sept.</div><div class="hm-mois" style="grid-column:23">oct.</div><div class="hm-mois" style="grid-column:27">nov.</div><div class="hm-mois" style="grid-column:31">déc.</div><div class="hm-mois" style="grid-column:36">janv.</div><div class="hm-mois" style="grid-column:40">févr.</div><div class="hm-mois" style="grid-column:44">mars</div><div class="hm-mois" style="grid-column:49">avr.</div><div class="hm-mois" style="grid-column:53">mai</div>
+        </div>
+        <div class="hm-grid">
+          <div class="hm-jours">
+            <span></span><span>mar</span><span></span><span>jeu</span><span></span><span>sam</span><span></span>
+          </div>
+          <div class="hm-cols"><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="05/05/2025 : 13.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="06/05/2025 : 15.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="07/05/2025 : 15.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="08/05/2025 : 16.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="09/05/2025 : 20.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="10/05/2025 : 22.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="11/05/2025 : 15.3 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="12/05/2025 : 16.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="13/05/2025 : 20.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="14/05/2025 : 23.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="15/05/2025 : 22.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="16/05/2025 : 19.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="17/05/2025 : 21.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="18/05/2025 : 23.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="19/05/2025 : 20.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="20/05/2025 : 22.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="21/05/2025 : 17.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="22/05/2025 : 16.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="23/05/2025 : 19.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="24/05/2025 : 19.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="25/05/2025 : 18.7 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="26/05/2025 : 18.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="27/05/2025 : 20.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="28/05/2025 : 22.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="29/05/2025 : 26.4 °C"></div><div class="hm-cell" style="background:#e8995c" title="30/05/2025 : 31.4 °C"></div><div class="hm-cell" style="background:#e8995c" title="31/05/2025 : 28.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="01/06/2025 : 22.5 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="02/06/2025 : 19.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="03/06/2025 : 23.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="04/06/2025 : 18.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="05/06/2025 : 19.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="06/06/2025 : 20.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="07/06/2025 : 19.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="08/06/2025 : 21.2 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="09/06/2025 : 24.8 °C"></div><div class="hm-cell" style="background:#e8995c" title="10/06/2025 : 29.0 °C"></div><div class="hm-cell" style="background:#e8995c" title="11/06/2025 : 32.4 °C"></div><div class="hm-cell" style="background:#e8995c" title="12/06/2025 : 29.0 °C"></div><div class="hm-cell" style="background:#e8995c" title="13/06/2025 : 31.8 °C"></div><div class="hm-cell" style="background:#e8995c" title="14/06/2025 : 26.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="15/06/2025 : 21.3 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="16/06/2025 : 24.5 °C"></div><div class="hm-cell" style="background:#e8995c" title="17/06/2025 : 27.5 °C"></div><div class="hm-cell" style="background:#e8995c" title="18/06/2025 : 30.2 °C"></div><div class="hm-cell" style="background:#e8995c" title="19/06/2025 : 32.7 °C"></div><div class="hm-cell" style="background:#e8995c" title="20/06/2025 : 32.6 °C"></div><div class="hm-cell" style="background:#c0392b" title="21/06/2025 : 34.3 °C"></div><div class="hm-cell" style="background:#e8995c" title="22/06/2025 : 26.7 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="23/06/2025 : 27.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="24/06/2025 : 31.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="25/06/2025 : 32.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="26/06/2025 : 24.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="27/06/2025 : 29.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="28/06/2025 : 33.0 °C"></div><div class="hm-cell" style="background:#c0392b" title="29/06/2025 : 34.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#c0392b" title="30/06/2025 : 35.5 °C"></div><div class="hm-cell" style="background:#c0392b" title="01/07/2025 : 36.2 °C"></div><div class="hm-cell" style="background:#e8995c" title="02/07/2025 : 25.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="03/07/2025 : 29.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="04/07/2025 : 30.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="05/07/2025 : 29.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="06/07/2025 : 18.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="07/07/2025 : 20.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="08/07/2025 : 24.0 °C"></div><div class="hm-cell" style="background:#e8995c" title="09/07/2025 : 27.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="10/07/2025 : 29.0 °C"></div><div class="hm-cell" style="background:#e8995c" title="11/07/2025 : 32.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="12/07/2025 : 31.3 °C"></div><div class="hm-cell" style="background:#e8995c" title="13/07/2025 : 28.6 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="14/07/2025 : 26.0 °C"></div><div class="hm-cell" style="background:#e8995c" title="15/07/2025 : 25.7 °C"></div><div class="hm-cell" style="background:#e8995c" title="16/07/2025 : 28.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="17/07/2025 : 32.4 °C"></div><div class="hm-cell" style="background:#e8995c" title="18/07/2025 : 32.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="19/07/2025 : 23.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="20/07/2025 : 20.0 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="21/07/2025 : 20.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="22/07/2025 : 23.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="23/07/2025 : 22.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="24/07/2025 : 20.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="25/07/2025 : 21.8 °C"></div><div class="hm-cell" style="background:#e8995c" title="26/07/2025 : 26.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="27/07/2025 : 21.5 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="28/07/2025 : 22.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="29/07/2025 : 24.0 °C"></div><div class="hm-cell" style="background:#e8995c" title="30/07/2025 : 24.9 °C"></div><div class="hm-cell" style="background:#e8995c" title="31/07/2025 : 25.7 °C"></div><div class="hm-cell" style="background:#e8995c" title="01/08/2025 : 24.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="02/08/2025 : 22.7 °C"></div><div class="hm-cell" style="background:#e8995c" title="03/08/2025 : 25.7 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="04/08/2025 : 31.1 °C"></div><div class="hm-cell" style="background:#e8995c" title="05/08/2025 : 25.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="06/08/2025 : 28.3 °C"></div><div class="hm-cell" style="background:#e8995c" title="07/08/2025 : 32.4 °C"></div><div class="hm-cell" style="background:#c0392b" title="08/08/2025 : 34.2 °C"></div><div class="hm-cell" style="background:#c0392b" title="09/08/2025 : 35.5 °C"></div><div class="hm-cell" style="background:#c0392b" title="10/08/2025 : 35.0 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#c0392b" title="11/08/2025 : 38.7 °C"></div><div class="hm-cell" style="background:#c0392b" title="12/08/2025 : 37.4 °C"></div><div class="hm-cell" style="background:#e8995c" title="13/08/2025 : 32.5 °C"></div><div class="hm-cell" style="background:#c0392b" title="14/08/2025 : 34.5 °C"></div><div class="hm-cell" style="background:#c0392b" title="15/08/2025 : 37.5 °C"></div><div class="hm-cell" style="background:#c0392b" title="16/08/2025 : 36.0 °C"></div><div class="hm-cell" style="background:#e8995c" title="17/08/2025 : 32.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="18/08/2025 : 27.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="19/08/2025 : 22.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="20/08/2025 : 23.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="21/08/2025 : 19.3 °C"></div><div class="hm-cell" style="background:#e8995c" title="22/08/2025 : 24.9 °C"></div><div class="hm-cell" style="background:#e8995c" title="23/08/2025 : 26.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="24/08/2025 : 30.8 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="25/08/2025 : 28.0 °C"></div><div class="hm-cell" style="background:#e8995c" title="26/08/2025 : 28.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="27/08/2025 : 22.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="28/08/2025 : 22.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="29/08/2025 : 18.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="30/08/2025 : 21.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="31/08/2025 : 21.6 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="01/09/2025 : 20.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="02/09/2025 : 19.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="03/09/2025 : 26.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="04/09/2025 : 20.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="05/09/2025 : 21.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="06/09/2025 : 28.7 °C"></div><div class="hm-cell" style="background:#e8995c" title="07/09/2025 : 27.5 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="08/09/2025 : 21.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="09/09/2025 : 22.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="10/09/2025 : 18.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="11/09/2025 : 18.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="12/09/2025 : 18.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="13/09/2025 : 18.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="14/09/2025 : 20.5 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="15/09/2025 : 19.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="16/09/2025 : 19.7 °C"></div><div class="hm-cell" style="background:#e8995c" title="17/09/2025 : 25.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="18/09/2025 : 27.8 °C"></div><div class="hm-cell" style="background:#e8995c" title="19/09/2025 : 28.3 °C"></div><div class="hm-cell" style="background:#e8995c" title="20/09/2025 : 24.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="21/09/2025 : 17.1 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="22/09/2025 : 11.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="23/09/2025 : 9.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="24/09/2025 : 10.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="25/09/2025 : 10.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="26/09/2025 : 12.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="27/09/2025 : 18.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="28/09/2025 : 16.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="29/09/2025 : 19.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="30/09/2025 : 19.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="01/10/2025 : 18.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="02/10/2025 : 20.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="03/10/2025 : 16.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="04/10/2025 : 16.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="05/10/2025 : 15.6 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="06/10/2025 : 16.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="07/10/2025 : 23.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="08/10/2025 : 22.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="09/10/2025 : 17.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="10/10/2025 : 19.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="11/10/2025 : 21.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="12/10/2025 : 24.0 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="13/10/2025 : 22.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="14/10/2025 : 20.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="15/10/2025 : 19.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="16/10/2025 : 19.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="17/10/2025 : 20.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="18/10/2025 : 19.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="19/10/2025 : 17.8 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="20/10/2025 : 15.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="21/10/2025 : 15.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="22/10/2025 : 17.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="23/10/2025 : 12.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="24/10/2025 : 12.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="25/10/2025 : 12.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="26/10/2025 : 10.7 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="27/10/2025 : 13.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="28/10/2025 : 12.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="29/10/2025 : 14.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="30/10/2025 : 15.6 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="31/10/2025 : 16.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="01/11/2025 : 14.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="02/11/2025 : 13.3 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="03/11/2025 : 13.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="04/11/2025 : 17.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="05/11/2025 : 18.9 °C"></div><div class="hm-cell" style="background:#3a73a8" title="06/11/2025 : 12.9 °C"></div><div class="hm-cell" style="background:#3a73a8" title="07/11/2025 : 13.6 °C"></div><div class="hm-cell" style="background:#3a73a8" title="08/11/2025 : 13.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="09/11/2025 : 14.3 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="10/11/2025 : 12.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="11/11/2025 : 17.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="12/11/2025 : 18.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="13/11/2025 : 19.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="14/11/2025 : 18.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="15/11/2025 : 16.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="16/11/2025 : 15.0 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="17/11/2025 : 9.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="18/11/2025 : 7.0 °C"></div><div class="hm-cell" style="background:#1f4068" title="19/11/2025 : 3.1 °C"></div><div class="hm-cell" style="background:#1f4068" title="20/11/2025 : 4.7 °C"></div><div class="hm-cell" style="background:#1f4068" title="21/11/2025 : 1.2 °C"></div><div class="hm-cell" style="background:#1f4068" title="22/11/2025 : 4.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="23/11/2025 : 10.7 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="24/11/2025 : 10.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="25/11/2025 : 6.1 °C"></div><div class="hm-cell" style="background:#1f4068" title="26/11/2025 : 4.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="27/11/2025 : 7.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="28/11/2025 : 7.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="29/11/2025 : 8.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="30/11/2025 : 8.7 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="01/12/2025 : 7.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="02/12/2025 : 6.6 °C"></div><div class="hm-cell" style="background:#3a73a8" title="03/12/2025 : 7.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="04/12/2025 : 7.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="05/12/2025 : 7.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="06/12/2025 : 10.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="07/12/2025 : 13.8 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="08/12/2025 : 15.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="09/12/2025 : 15.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="10/12/2025 : 10.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="11/12/2025 : 10.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="12/12/2025 : 14.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="13/12/2025 : 14.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="14/12/2025 : 11.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="15/12/2025 : 13.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="16/12/2025 : 14.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="17/12/2025 : 8.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="18/12/2025 : 14.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="19/12/2025 : 10.6 °C"></div><div class="hm-cell" style="background:#3a73a8" title="20/12/2025 : 9.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="21/12/2025 : 12.6 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#1f4068" title="22/12/2025 : 4.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="23/12/2025 : 8.4 °C"></div><div class="hm-cell" style="background:#1f4068" title="24/12/2025 : 3.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="25/12/2025 : 6.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="26/12/2025 : 11.9 °C"></div><div class="hm-cell" style="background:#3a73a8" title="27/12/2025 : 13.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="28/12/2025 : 15.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="29/12/2025 : 11.2 °C"></div><div class="hm-cell" style="background:#1f4068" title="30/12/2025 : 2.9 °C"></div><div class="hm-cell" style="background:#3a73a8" title="31/12/2025 : 4.9 °C"></div><div class="hm-cell" style="background:#1f4068" title="01/01/2026 : 1.3 °C"></div><div class="hm-cell" style="background:#1f4068" title="02/01/2026 : 4.8 °C"></div><div class="hm-cell" style="background:#1f4068" title="03/01/2026 : 3.5 °C"></div><div class="hm-cell" style="background:#1f4068" title="04/01/2026 : 1.8 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#1f4068" title="05/01/2026 : 1.8 °C"></div><div class="hm-cell" style="background:#1f4068" title="06/01/2026 : 0.0 °C"></div><div class="hm-cell" style="background:#1f4068" title="07/01/2026 : 2.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="08/01/2026 : 9.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="09/01/2026 : 5.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="10/01/2026 : 6.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="11/01/2026 : 5.2 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="12/01/2026 : 9.6 °C"></div><div class="hm-cell" style="background:#3a73a8" title="13/01/2026 : 12.6 °C"></div><div class="hm-cell" style="background:#3a73a8" title="14/01/2026 : 11.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="15/01/2026 : 13.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="16/01/2026 : 8.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="17/01/2026 : 11.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="18/01/2026 : 13.2 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="19/01/2026 : 10.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="20/01/2026 : 7.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="21/01/2026 : 11.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="22/01/2026 : 9.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="23/01/2026 : 8.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="24/01/2026 : 8.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="25/01/2026 : 5.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="26/01/2026 : 7.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="27/01/2026 : 7.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="28/01/2026 : 7.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="29/01/2026 : 8.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="30/01/2026 : 10.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="31/01/2026 : 8.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="01/02/2026 : 7.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="02/02/2026 : 11.3 °C"></div><div class="hm-cell" style="background:#3a73a8" title="03/02/2026 : 10.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="04/02/2026 : 11.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="05/02/2026 : 9.6 °C"></div><div class="hm-cell" style="background:#3a73a8" title="06/02/2026 : 11.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="07/02/2026 : 10.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="08/02/2026 : 10.8 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="09/02/2026 : 9.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="10/02/2026 : 12.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="11/02/2026 : 10.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="12/02/2026 : 9.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="13/02/2026 : 9.6 °C"></div><div class="hm-cell" style="background:#3a73a8" title="14/02/2026 : 6.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="15/02/2026 : 10.2 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="16/02/2026 : 9.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="17/02/2026 : 9.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="18/02/2026 : 12.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="19/02/2026 : 8.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="20/02/2026 : 9.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="21/02/2026 : 9.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="22/02/2026 : 11.0 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="23/02/2026 : 13.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="24/02/2026 : 20.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="25/02/2026 : 20.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="26/02/2026 : 16.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="27/02/2026 : 18.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="28/02/2026 : 12.0 °C"></div><div class="hm-cell" style="background:#3a73a8" title="01/03/2026 : 12.5 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="02/03/2026 : 15.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="03/03/2026 : 16.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="04/03/2026 : 17.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="05/03/2026 : 16.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="06/03/2026 : 14.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="07/03/2026 : 15.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="08/03/2026 : 15.9 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="09/03/2026 : 13.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="10/03/2026 : 14.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="11/03/2026 : 12.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="12/03/2026 : 10.2 °C"></div><div class="hm-cell" style="background:#3a73a8" title="13/03/2026 : 11.9 °C"></div><div class="hm-cell" style="background:#3a73a8" title="14/03/2026 : 8.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="15/03/2026 : 10.4 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="16/03/2026 : 9.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="17/03/2026 : 21.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="18/03/2026 : 19.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="19/03/2026 : 18.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="20/03/2026 : 18.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="21/03/2026 : 17.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="22/03/2026 : 14.7 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="23/03/2026 : 14.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="24/03/2026 : 17.5 °C"></div><div class="hm-cell" style="background:#3a73a8" title="25/03/2026 : 10.9 °C"></div><div class="hm-cell" style="background:#3a73a8" title="26/03/2026 : 8.9 °C"></div><div class="hm-cell" style="background:#3a73a8" title="27/03/2026 : 10.1 °C"></div><div class="hm-cell" style="background:#3a73a8" title="28/03/2026 : 9.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="29/03/2026 : 9.8 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="30/03/2026 : 13.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="31/03/2026 : 10.6 °C"></div><div class="hm-cell" style="background:#3a73a8" title="01/04/2026 : 11.4 °C"></div><div class="hm-cell" style="background:#3a73a8" title="02/04/2026 : 11.8 °C"></div><div class="hm-cell" style="background:#3a73a8" title="03/04/2026 : 12.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="04/04/2026 : 20.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="05/04/2026 : 21.8 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="06/04/2026 : 26.2 °C"></div><div class="hm-cell" style="background:#e8995c" title="07/04/2026 : 25.3 °C"></div><div class="hm-cell" style="background:#e8995c" title="08/04/2026 : 26.6 °C"></div><div class="hm-cell" style="background:#e8995c" title="09/04/2026 : 26.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="10/04/2026 : 20.7 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="11/04/2026 : 14.7 °C"></div><div class="hm-cell" style="background:#3a73a8" title="12/04/2026 : 9.0 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#3a73a8" title="13/04/2026 : 13.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="14/04/2026 : 16.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="15/04/2026 : 17.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="16/04/2026 : 19.8 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="17/04/2026 : 23.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="18/04/2026 : 23.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="19/04/2026 : 20.1 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="20/04/2026 : 21.9 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="21/04/2026 : 22.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="22/04/2026 : 24.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="23/04/2026 : 22.8 °C"></div><div class="hm-cell" style="background:#e8995c" title="24/04/2026 : 24.3 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="25/04/2026 : 20.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="26/04/2026 : 23.2 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#e8995c" title="27/04/2026 : 24.5 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="28/04/2026 : 19.4 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="29/04/2026 : 24.1 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="30/04/2026 : 19.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="01/05/2026 : 21.0 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="02/05/2026 : 21.2 °C"></div><div class="hm-cell" style="background:#9aa3ad" title="03/05/2026 : 21.3 °C"></div></div><div class="hm-col"><div class="hm-cell" style="background:#9aa3ad" title="04/05/2026 : 19.6 °C"></div><div class="hm-cell hm-vide"></div><div class="hm-cell hm-vide"></div><div class="hm-cell hm-vide"></div><div class="hm-cell hm-vide"></div><div class="hm-cell hm-vide"></div><div class="hm-cell hm-vide"></div></div></div>
+        </div>
+        <div class="hm-legende">
+          <span>0 °C</span>
+          <span class="hm-grad"></span>
+          <span>39 °C</span>
+        </div>
+      </div>
+    </div>
+</div>
+
 <script>
-const DATA = {"climogramme": {"labels": ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."], "rr_reel": [125.6, 239.6, 40.4, 18.0, 42.2, 0, 0, 0, 0, 0, 0, 0], "rr_norm": [111.7, 92.5, 92.8, 100.9, 101.6, 83.6, 60.4, 70.4, 77.8, 93.3, 124.8, 123.6], "t_reel": [4.1, 8.0, 8.2, 13.3, 15.3, null, null, null, null, null, null, null], "t_norm": [4.4, 5.2, 8.1, 10.5, 14.0, 17.6, 19.4, 19.4, 16.1, 12.9, 7.7, 5.2]}, "detail_mois": {"labels": ["01", "02", "03", "04"], "rr": [0.6, 0.4, 31.6, 9.6], "tx": [21.0, 21.2, 21.3, 19.6], "tn": [8.4, 8.8, 11.7, 10.6]}};
+const DATA = {"climogramme": {"labels": ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."], "rr_reel": [125.6, 239.6, 40.4, 18.0, 42.2, 0, 0, 0, 0, 0, 0, 0], "rr_norm": [111.7, 92.5, 92.8, 100.9, 101.6, 83.6, 60.4, 70.4, 77.8, 93.3, 124.8, 123.6], "t_reel": [4.1, 8.0, 8.2, 13.3, 15.3, null, null, null, null, null, null, null], "t_norm": [4.4, 5.2, 8.1, 10.5, 14.0, 17.6, 19.4, 19.4, 16.1, 12.9, 7.7, 5.2]}, "detail_mois": {"labels": ["01", "02", "03", "04"], "rr": [0.6, 0.4, 31.6, 9.6], "tx": [21.0, 21.2, 21.3, 19.6], "tn": [8.4, 8.8, 11.7, 10.6]}, "bilan": {"labels": ["01/01", "02/01", "03/01", "04/01", "05/01", "06/01", "07/01", "08/01", "09/01", "10/01", "11/01", "12/01", "13/01", "14/01", "15/01", "16/01", "17/01", "18/01", "19/01", "20/01", "21/01", "22/01", "23/01", "24/01", "25/01", "26/01", "27/01", "28/01", "29/01", "30/01", "31/01", "01/02", "02/02", "03/02", "04/02", "05/02", "06/02", "07/02", "08/02", "09/02", "10/02", "11/02", "12/02", "13/02", "14/02", "15/02", "16/02", "17/02", "18/02", "19/02", "20/02", "21/02", "22/02", "23/02", "24/02", "25/02", "26/02", "27/02", "28/02", "01/03", "02/03", "03/03", "04/03", "05/03", "06/03", "07/03", "08/03", "09/03", "10/03", "11/03", "12/03", "13/03", "14/03", "15/03", "16/03", "17/03", "18/03", "19/03", "20/03", "21/03", "22/03", "23/03", "24/03", "25/03", "26/03", "27/03", "28/03", "29/03", "30/03", "31/03", "01/04", "02/04", "03/04", "04/04", "05/04", "06/04", "07/04", "08/04", "09/04", "10/04", "11/04", "12/04", "13/04", "14/04", "15/04", "16/04", "17/04", "18/04", "19/04", "20/04", "21/04", "22/04", "23/04", "24/04", "25/04", "26/04", "27/04", "28/04", "29/04", "30/04", "01/05", "02/05", "03/05", "04/05"], "p_etp_courant": [-0.4, -0.8, -1.2, -1.7, -2.1, -2.5, 12.0, 33.3, 41.1, 40.8, 40.4, 39.7, 38.8, 38.2, 50.2, 51.2, 54.0, 53.4, 55.5, 55.8, 56.8, 63.6, 66.9, 66.7, 74.5, 74.1, 82.2, 81.6, 91.8, 98.7, 106.9, 113.8, 129.2, 128.5, 138.7, 146.8, 156.0, 155.1, 154.2, 158.4, 188.4, 214.0, 230.3, 229.9, 230.8, 263.6, 268.5, 273.4, 297.1, 328.7, 327.9, 327.1, 326.2, 324.6, 322.4, 320.2, 318.5, 317.1, 316.2, 314.8, 313.0, 311.0, 308.8, 309.9, 309.4, 307.7, 305.8, 304.4, 302.3, 309.9, 308.5, 324.2, 322.8, 321.7, 320.8, 317.9, 315.1, 312.5, 309.7, 307.0, 304.8, 302.5, 299.8, 298.4, 296.9, 295.0, 296.7, 294.8, 295.4, 293.5, 294.3, 293.2, 291.0, 287.8, 284.3, 279.9, 275.7, 271.2, 266.7, 263.6, 271.0, 269.6, 267.3, 264.2, 260.8, 257.2, 253.0, 249.8, 246.5, 242.2, 238.1, 233.7, 230.0, 225.3, 221.4, 217.5, 212.7, 209.7, 205.7, 204.6, 201.3, 197.7, 225.6, 231.7], "p_etp_reference": [5.1, 8.4, 13.7, 16.4, 20.8, 24.3, 26.4, 30.2, 33.6, 36.6, 38.5, 42.4, 43.7, 44.3, 48.0, 51.6, 54.5, 59.4, 61.8, 65.1, 67.0, 72.0, 75.4, 77.6, 78.6, 80.7, 82.6, 85.9, 88.7, 91.8, 93.6, 97.2, 98.8, 101.7, 103.2, 106.5, 108.9, 110.7, 114.6, 117.5, 120.5, 122.4, 125.2, 129.0, 131.9, 134.8, 136.8, 138.4, 139.1, 140.1, 142.1, 143.1, 144.0, 146.5, 148.7, 151.3, 152.8, 155.6, 156.7, 161.7, 165.3, 169.7, 173.2, 175.6, 177.0, 179.2, 179.8, 180.6, 183.0, 184.9, 186.1, 187.3, 186.6, 185.9, 185.8, 185.5, 186.8, 187.2, 186.2, 187.0, 187.7, 187.1, 187.3, 188.0, 187.7, 190.6, 192.3, 193.6, 195.1, 195.0, 195.5, 195.7, 197.2, 198.0, 197.5, 198.3, 199.4, 198.6, 198.6, 198.6, 199.8, 199.9, 199.1, 199.1, 199.1, 198.2, 197.1, 197.3, 198.6, 198.2, 197.7, 197.4, 199.9, 202.1, 204.3, 205.5, 205.2, 207.7, 212.0, 213.8, 215.8, 216.4, 216.0, 216.5], "annee": 2026}};
 Chart.defaults.color = '#9aa3ad';
 Chart.defaults.borderColor = '#2c333d';
+Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
 new Chart(document.getElementById('detail'), {
   type: 'bar',
@@ -118,12 +207,14 @@ new Chart(document.getElementById('detail'), {
     labels: DATA.detail_mois.labels,
     datasets: [
       { label: 'Pluie (mm)', data: DATA.detail_mois.rr, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 2 },
-      { label: 'T° max (°C)', data: DATA.detail_mois.tx, type: 'line', borderColor: '#e74c3c', backgroundColor: '#e74c3c', tension: 0.25, yAxisID: 'y1', order: 1 },
-      { label: 'T° min (°C)', data: DATA.detail_mois.tn, type: 'line', borderColor: '#5dade2', backgroundColor: '#5dade2', borderDash: [4,4], tension: 0.25, yAxisID: 'y1', order: 1 },
+      { label: 'T° max', data: DATA.detail_mois.tx, type: 'line', borderColor: '#e74c3c',
+         backgroundColor: '#e74c3c', tension: 0.25, yAxisID: 'y1', order: 1, spanGaps: true },
+      { label: 'T° min', data: DATA.detail_mois.tn, type: 'line', borderColor: '#5dade2',
+         backgroundColor: '#5dade2', borderDash: [4,4], tension: 0.25, yAxisID: 'y1', order: 1, spanGaps: true },
     ],
   },
   options: {
-    responsive: true,
+    responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
       y:  { position: 'left',  title: { display: true, text: 'mm' } },
@@ -136,20 +227,58 @@ new Chart(document.getElementById('climo'), {
   data: {
     labels: DATA.climogramme.labels,
     datasets: [
-      { type: 'bar', label: 'Pluie observée', data: DATA.climogramme.rr_reel, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 3 },
-      { type: 'bar', label: 'Pluie normale',  data: DATA.climogramme.rr_norm, backgroundColor: '#3a4452', yAxisID: 'y', order: 4 },
-      { type: 'line', label: 'T° moyenne',    data: DATA.climogramme.t_reel, borderColor: '#e74c3c', backgroundColor: '#e74c3c', tension: 0.3, yAxisID: 'y1', order: 1, spanGaps: true },
-      { type: 'line', label: 'T° normale',    data: DATA.climogramme.t_norm, borderColor: '#9aa3ad', borderDash: [5,5], tension: 0.3, yAxisID: 'y1', order: 2, pointRadius: 0 },
+      { type: 'bar',  label: 'Pluie observée', data: DATA.climogramme.rr_reel, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 3 },
+      { type: 'bar',  label: 'Pluie normale',  data: DATA.climogramme.rr_norm, backgroundColor: '#3a4452', yAxisID: 'y', order: 4 },
+      { type: 'line', label: 'T° moyenne',     data: DATA.climogramme.t_reel, borderColor: '#e74c3c',
+         backgroundColor: '#e74c3c', tension: 0.3, yAxisID: 'y1', order: 1, spanGaps: true },
+      { type: 'line', label: 'T° normale',     data: DATA.climogramme.t_norm, borderColor: '#9aa3ad',
+         borderDash: [5,5], tension: 0.3, yAxisID: 'y1', order: 2, pointRadius: 0 },
     ],
   },
   options: {
-    responsive: true,
+    responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
       y:  { position: 'left',  title: { display: true, text: 'mm cumulés' } },
       y1: { position: 'right', title: { display: true, text: '°C' }, grid: { drawOnChartArea: false } },
     },
   }
+});
+
+new Chart(document.getElementById('bilan_chart'), {
+  type: 'line',
+  data: {
+    labels: DATA.bilan.labels,
+    datasets: [
+      { label: 'P − ETP ' + DATA.bilan.annee,
+         data: DATA.bilan.p_etp_courant,
+         borderColor: '#56b85e', backgroundColor: 'rgba(86,184,94,0.12)',
+         fill: true, tension: 0.2, pointRadius: 0, spanGaps: true, borderWidth: 2 },
+      { label: 'Référence 1995-2024',
+         data: DATA.bilan.p_etp_reference,
+         borderColor: '#9aa3ad', borderDash: [5,5],
+         fill: false, tension: 0.2, pointRadius: 0, spanGaps: true, borderWidth: 1.5 },
+    ],
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { maxTicksLimit: 12, autoSkip: true } },
+      y: { title: { display: true, text: 'mm' },
+            grid: { color: ctx => ctx.tick.value === 0 ? '#56b85e55' : '#2c333d' } },
+    },
+  }
+});
+
+// Onglets
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('actif'));
+    document.querySelectorAll('.panneau').forEach(p => p.classList.remove('actif'));
+    btn.classList.add('actif');
+    document.getElementById(btn.dataset.cible).classList.add('actif');
+  });
 });
 </script>
 </body>

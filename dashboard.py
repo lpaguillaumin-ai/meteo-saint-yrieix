@@ -1,13 +1,19 @@
-"""Génère output/index.html : tableau de bord météo St-Yrieix
-(climogramme 12 mois + détail jour-par-jour du mois en cours + indicateurs clés
-comparés aux normales). Inspiré de docs/maquette.png."""
+"""Génère output/index.html : tableau de bord météo St-Yrieix.
+
+Quatre onglets :
+- Mois en cours (KPIs + détail jour-par-jour + climogramme 12 mois)
+- Bilan hydrique (P-ETP cumulée depuis le 1er janvier vs référence 1995-2024)
+- Heatmap T° max (12 mois glissants)
+
+Inspiré de docs/maquette.png."""
 
 from __future__ import annotations
 
 import csv
 import json
+import math
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -15,14 +21,20 @@ if hasattr(sys.stdout, "reconfigure"):
 
 RACINE = Path(__file__).parent
 QUOTIDIEN = RACINE / "data" / "quotidien.csv"
+HISTORIQUE = RACINE / "data" / "historique.csv"
 NORMALES = RACINE / "data" / "normales.csv"
 SORTIE = RACINE / "output" / "index.html"
+
+LATITUDE_DEG = 45.513667  # St-Yrieix-la-Perche
+ANNEE_REF_DEBUT, ANNEE_REF_FIN = 1995, 2024
 
 MOIS_FR = ["", "janv.", "févr.", "mars", "avr.", "mai", "juin",
            "juil.", "août", "sept.", "oct.", "nov.", "déc."]
 MOIS_FR_LONG = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                 "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 
+
+# ── Lecture des données ───────────────────────────────────────────────────────
 
 def parser_float(s: str) -> float | None:
     if s is None or s == "":
@@ -33,26 +45,26 @@ def parser_float(s: str) -> float | None:
         return None
 
 
-def charger_quotidien() -> list[dict]:
+def charger_csv(chemin: Path) -> list[dict]:
     lignes = []
-    with QUOTIDIEN.open("r", encoding="utf-8", newline="") as f:
+    with chemin.open("r", encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
             d = datetime.strptime(row["date"], "%Y-%m-%d").date()
             lignes.append({
                 "date": d,
-                "RR":   parser_float(row["RR"]),
-                "TN":   parser_float(row["TN"]),
-                "TX":   parser_float(row["TX"]),
-                "FXI":  parser_float(row["FXI"]),
-                "DXI":  parser_float(row["DXI"]),
-                "UN":   parser_float(row["UN"]),
-                "UX":   parser_float(row["UX"]),
-                "INST": parser_float(row["INST"]),
+                "RR":   parser_float(row.get("RR", "")),
+                "TN":   parser_float(row.get("TN", "")),
+                "TX":   parser_float(row.get("TX", "")),
+                "FXI":  parser_float(row.get("FXI", "")),
+                "DXI":  parser_float(row.get("DXI", "")),
+                "UN":   parser_float(row.get("UN", "")),
+                "UX":   parser_float(row.get("UX", "")),
+                "INST": parser_float(row.get("INST", "")),
             })
     return lignes
 
 
-def charger_normales() -> dict[int, dict[str, float]]:
+def charger_normales() -> dict[int, dict[str, float | None]]:
     out = {}
     with NORMALES.open("r", encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
@@ -61,95 +73,126 @@ def charger_normales() -> dict[int, dict[str, float]]:
     return out
 
 
+# ── ETP Hargreaves ────────────────────────────────────────────────────────────
+
+def rayonnement_extraterrestre(jour_annee: int) -> float:
+    """Ra en mm/jour-équivalent pour la latitude du site (FAO-56)."""
+    phi = math.radians(LATITUDE_DEG)
+    dr = 1 + 0.033 * math.cos(2 * math.pi * jour_annee / 365)
+    delta = 0.409 * math.sin(2 * math.pi * jour_annee / 365 - 1.39)
+    cos_ws = max(-1.0, min(1.0, -math.tan(phi) * math.tan(delta)))
+    ws = math.acos(cos_ws)
+    gsc = 0.0820  # MJ/m²/min
+    ra_mj = (24 * 60 / math.pi) * gsc * dr * (
+        ws * math.sin(phi) * math.sin(delta)
+        + math.cos(phi) * math.cos(delta) * math.sin(ws)
+    )
+    return ra_mj / 2.45  # conversion en mm/jour
+
+
+def etp_hargreaves(tn: float, tx: float, jour_annee: int) -> float:
+    """ETP journalière (mm) — formule de Hargreaves-Samani."""
+    if tx <= tn:
+        return 0.0
+    tmoy = (tn + tx) / 2
+    ra = rayonnement_extraterrestre(jour_annee)
+    return max(0.0, 0.0023 * (tmoy + 17.8) * math.sqrt(tx - tn) * ra)
+
+
+# ── Métriques ─────────────────────────────────────────────────────────────────
+
 def direction_rose(deg: float | None) -> str:
     if deg is None:
         return "—"
-    secteurs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-                "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
-    return secteurs[int((deg % 360) / 22.5 + 0.5) % 16]
+    rose = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
+    return rose[int((deg % 360) / 22.5 + 0.5) % 16]
 
 
-def cumul_mensuel_actuel(jours: list[dict], mois: int, annee: int, champ: str) -> float | None:
-    """Somme des `champ` pour les jours du mois (ignore None)."""
-    valeurs = [j[champ] for j in jours if j["date"].year == annee and j["date"].month == mois and j[champ] is not None]
-    return sum(valeurs) if valeurs else None
-
-
-def moyenne_mensuelle(jours: list[dict], mois: int, annee: int, champ: str) -> float | None:
-    valeurs = [j[champ] for j in jours if j["date"].year == annee and j["date"].month == mois and j[champ] is not None]
-    return sum(valeurs) / len(valeurs) if valeurs else None
-
-
-def construire_kpis(jours_mois: list[dict], normales_mois: dict[str, float]) -> list[dict]:
-    """4 indicateurs : pluie, T° moyenne, vent max, insolation."""
-    # Pluie
+def construire_kpis(jours_mois: list[dict], normales_mois: dict[str, float | None]) -> list[dict]:
     rr_total = sum(j["RR"] for j in jours_mois if j["RR"] is not None)
-    rr_normale = normales_mois.get("RR")
-    # T° moyenne (TN+TX)/2 jour par jour, puis moyenne
-    tnxs = [(j["TN"] + j["TX"]) / 2 for j in jours_mois if j["TN"] is not None and j["TX"] is not None]
+    rr_norm = normales_mois.get("RR")
+
+    tnxs = [(j["TN"] + j["TX"]) / 2 for j in jours_mois
+            if j["TN"] is not None and j["TX"] is not None]
     t_moy = sum(tnxs) / len(tnxs) if tnxs else None
-    t_normale = ((normales_mois.get("TN") or 0) + (normales_mois.get("TX") or 0)) / 2 if normales_mois.get("TN") is not None else None
-    # Vent max (FXI en m/s -> km/h)
+    t_norm = ((normales_mois["TN"] + normales_mois["TX"]) / 2
+              if normales_mois.get("TN") is not None and normales_mois.get("TX") is not None
+              else None)
+
     rafales = [(j["FXI"], j["DXI"], j["date"]) for j in jours_mois if j["FXI"] is not None]
     if rafales:
         fxi_max, dxi_max, date_max = max(rafales, key=lambda x: x[0])
         vent_kmh = fxi_max * 3.6
     else:
         vent_kmh = dxi_max = date_max = None
-    # Insolation (minutes -> heures)
-    inst_total_min = sum(j["INST"] for j in jours_mois if j["INST"] is not None)
-    inst_h = inst_total_min / 60 if inst_total_min else 0
-    inst_normale_h = (normales_mois.get("INST") or 0) / 60 if normales_mois.get("INST") else None
+
+    inst_min = sum(j["INST"] for j in jours_mois if j["INST"] is not None)
+    inst_h = inst_min / 60 if inst_min else 0
+    inst_norm_h = (normales_mois["INST"] / 60) if normales_mois.get("INST") else None
 
     def pct(v, n):
         if v is None or n is None or n == 0:
             return None
-        return round((v - n) / n * 100, 0)
+        return (v - n) / n * 100
+
+    def fmt_pct(p):
+        if p is None:
+            return ""
+        signe = "+" if p >= 0 else ""
+        return f"{signe}{p:.0f}%"
+
+    p_rr = pct(rr_total, rr_norm)
+    p_inst = pct(inst_h, inst_norm_h)
+    delta_t = (t_moy - t_norm) if (t_moy is not None and t_norm is not None) else None
 
     return [
         {
             "titre": "Cumul pluie",
-            "valeur": f"{rr_total:.1f} mm" if rr_total else "0,0 mm",
-            "comparaison": (
-                f"{'+' if pct(rr_total, rr_normale) and pct(rr_total, rr_normale) >= 0 else ''}{pct(rr_total, rr_normale):.0f}% / normale ≈ {rr_normale:.0f} mm"
-                if rr_normale else ""
-            ),
-            "tendance": "up" if pct(rr_total, rr_normale) and pct(rr_total, rr_normale) > 5 else ("down" if pct(rr_total, rr_normale) and pct(rr_total, rr_normale) < -5 else "flat"),
+            "valeur": f"{rr_total:.1f} mm",
+            "comparaison": f"{fmt_pct(p_rr)} / normale ≈ {rr_norm:.0f} mm" if rr_norm else "",
+            "tendance": "up" if p_rr and p_rr > 5 else ("down" if p_rr and p_rr < -5 else "flat"),
         },
         {
             "titre": "T° moyenne",
             "valeur": f"{t_moy:.1f} °C" if t_moy is not None else "—",
             "comparaison": (
-                f"{'+' if (t_moy - t_normale) >= 0 else ''}{(t_moy - t_normale):.1f} °C / normale ≈ {t_normale:.1f} °C"
-                if t_moy is not None and t_normale is not None else ""
+                f"{'+' if delta_t >= 0 else ''}{delta_t:.1f} °C / normale ≈ {t_norm:.1f} °C"
+                if delta_t is not None else ""
             ),
-            "tendance": "up" if t_moy and t_normale and (t_moy - t_normale) > 0.5 else ("down" if t_moy and t_normale and (t_moy - t_normale) < -0.5 else "flat"),
+            "tendance": "up" if delta_t and delta_t > 0.5 else ("down" if delta_t and delta_t < -0.5 else "flat"),
         },
         {
             "titre": "Vent max",
             "valeur": f"{vent_kmh:.1f} km/h" if vent_kmh else "—",
-            "comparaison": (
-                f"{date_max.strftime('%d/%m')} · {direction_rose(dxi_max)}"
-                if date_max else ""
-            ),
+            "comparaison": f"{date_max.strftime('%d/%m')} · {direction_rose(dxi_max)}" if date_max else "",
             "tendance": "flat",
         },
         {
             "titre": "Insolation",
             "valeur": f"{inst_h:.0f} h" if inst_h else "—",
-            "comparaison": (
-                f"normale ≈ {inst_normale_h:.0f} h" if inst_normale_h else ""
-            ),
-            "tendance": "up" if inst_h and inst_normale_h and inst_h > inst_normale_h * 1.05 else ("down" if inst_h and inst_normale_h and inst_h < inst_normale_h * 0.95 else "flat"),
+            "comparaison": f"normale ≈ {inst_norm_h:.0f} h" if inst_norm_h else "",
+            "tendance": "up" if p_inst and p_inst > 5 else ("down" if p_inst and p_inst < -5 else "flat"),
         },
     ]
 
 
+def cumul_mensuel(jours: list[dict], mois: int, annee: int, champ: str) -> float | None:
+    valeurs = [j[champ] for j in jours
+               if j["date"].year == annee and j["date"].month == mois and j[champ] is not None]
+    return sum(valeurs) if valeurs else None
+
+
+def moyenne_mensuelle(jours: list[dict], mois: int, annee: int, champ: str) -> float | None:
+    valeurs = [j[champ] for j in jours
+               if j["date"].year == annee and j["date"].month == mois and j[champ] is not None]
+    return sum(valeurs) / len(valeurs) if valeurs else None
+
+
 def construire_climogramme(jours: list[dict], normales: dict, annee: int) -> dict:
-    """12 mois : cumul pluie réel vs normale, T° moy réelle vs normale."""
     rr_reel, rr_norm, t_reel, t_norm = [], [], [], []
     for m in range(1, 13):
-        rr_reel.append(cumul_mensuel_actuel(jours, m, annee, "RR") or 0)
+        rr_reel.append(round(cumul_mensuel(jours, m, annee, "RR") or 0, 1))
         rr_norm.append(normales[m]["RR"])
         tn = moyenne_mensuelle(jours, m, annee, "TN")
         tx = moyenne_mensuelle(jours, m, annee, "TX")
@@ -157,57 +200,237 @@ def construire_climogramme(jours: list[dict], normales: dict, annee: int) -> dic
         t_norm.append(round((normales[m]["TN"] + normales[m]["TX"]) / 2, 1))
     return {
         "labels": [MOIS_FR[m] for m in range(1, 13)],
-        "rr_reel": rr_reel,
-        "rr_norm": rr_norm,
-        "t_reel": t_reel,
-        "t_norm": t_norm,
+        "rr_reel": rr_reel, "rr_norm": rr_norm,
+        "t_reel": t_reel,   "t_norm": t_norm,
     }
 
 
 def construire_detail_mois(jours_mois: list[dict]) -> dict:
     return {
         "labels": [j["date"].strftime("%d") for j in jours_mois],
-        "rr":    [j["RR"]  if j["RR"]  is not None else 0 for j in jours_mois],
-        "tx":    [j["TX"]  if j["TX"]  is not None else None for j in jours_mois],
-        "tn":    [j["TN"]  if j["TN"]  is not None else None for j in jours_mois],
+        "rr": [j["RR"] if j["RR"] is not None else 0 for j in jours_mois],
+        "tx": [j["TX"] for j in jours_mois],
+        "tn": [j["TN"] for j in jours_mois],
     }
 
 
+# ── Bilan hydrique P-ETP ──────────────────────────────────────────────────────
+
+def serie_p_etp_annuelle(jours_annee: list[dict]) -> list[float | None]:
+    """Cumul P-ETP jour après jour pour les jours de l'année donnée
+    (longueur = nombre de jours présents, dans l'ordre chronologique)."""
+    cumul = 0.0
+    serie = []
+    for j in sorted(jours_annee, key=lambda x: x["date"]):
+        if j["TN"] is None or j["TX"] is None:
+            serie.append(None)
+            continue
+        p = j["RR"] if j["RR"] is not None else 0.0
+        etp = etp_hargreaves(j["TN"], j["TX"], j["date"].timetuple().tm_yday)
+        cumul += p - etp
+        serie.append(round(cumul, 1))
+    return serie
+
+
+def construire_bilan_hydrique(quotidien: list[dict], historique: list[dict], annee_courante: int) -> dict:
+    # Année en cours, jusqu'au dernier jour disponible
+    jours_courants = [j for j in quotidien if j["date"].year == annee_courante]
+    jours_courants.sort(key=lambda x: x["date"])
+    serie_courante = serie_p_etp_annuelle(jours_courants)
+    labels = [j["date"].strftime("%d/%m") for j in jours_courants]
+
+    # Référence : moyenne par jour-de-l'année sur 1995-2024
+    par_doy: dict[int, list[float]] = {}
+    for an in range(ANNEE_REF_DEBUT, ANNEE_REF_FIN + 1):
+        jours_an = [j for j in historique if j["date"].year == an]
+        if not jours_an:
+            continue
+        cumul = 0.0
+        for j in sorted(jours_an, key=lambda x: x["date"]):
+            if j["TN"] is None or j["TX"] is None:
+                continue
+            p = j["RR"] if j["RR"] is not None else 0.0
+            etp = etp_hargreaves(j["TN"], j["TX"], j["date"].timetuple().tm_yday)
+            cumul += p - etp
+            doy = j["date"].timetuple().tm_yday
+            par_doy.setdefault(doy, []).append(cumul)
+
+    serie_ref = []
+    for j in jours_courants:
+        doy = j["date"].timetuple().tm_yday
+        valeurs = par_doy.get(doy, [])
+        serie_ref.append(round(sum(valeurs) / len(valeurs), 1) if valeurs else None)
+
+    return {
+        "labels": labels,
+        "p_etp_courant": serie_courante,
+        "p_etp_reference": serie_ref,
+        "annee": annee_courante,
+    }
+
+
+# ── Heatmap T° max — 12 mois glissants ────────────────────────────────────────
+
+def construire_heatmap(jours: list[dict], date_fin: date) -> dict:
+    """Grille semaines × jours pour les 365 derniers jours."""
+    date_debut = date_fin - timedelta(days=364)
+    par_date = {j["date"]: j["TX"] for j in jours if j["TX"] is not None}
+
+    # Cellules : lundi (0) → dimanche (6) sur l'axe vertical.
+    # Aligner sur le lundi qui précède (ou égale) date_debut.
+    debut_grille = date_debut - timedelta(days=date_debut.weekday())
+    fin_grille = date_fin + timedelta(days=(6 - date_fin.weekday()))
+    nb_jours = (fin_grille - debut_grille).days + 1
+
+    cellules = []
+    valeurs_visibles = []
+    for i in range(nb_jours):
+        d = debut_grille + timedelta(days=i)
+        tx = par_date.get(d) if date_debut <= d <= date_fin else None
+        cellules.append({
+            "date": d.isoformat(),
+            "tx": tx,
+            "dans_periode": date_debut <= d <= date_fin,
+            "semaine": i // 7,
+            "jour_semaine": d.weekday(),
+        })
+        if tx is not None:
+            valeurs_visibles.append(tx)
+
+    nb_semaines = (nb_jours + 6) // 7
+
+    # Étiquettes de mois : on place le label sur la première colonne de chaque mois
+    etiquettes_mois = []
+    mois_vu = None
+    for s in range(nb_semaines):
+        d = debut_grille + timedelta(days=s * 7)
+        if d.month != mois_vu and date_debut <= d + timedelta(days=6):
+            etiquettes_mois.append({"semaine": s, "label": MOIS_FR[d.month]})
+            mois_vu = d.month
+
+    return {
+        "cellules": cellules,
+        "nb_semaines": nb_semaines,
+        "etiquettes_mois": etiquettes_mois,
+        "min": min(valeurs_visibles) if valeurs_visibles else 0,
+        "max": max(valeurs_visibles) if valeurs_visibles else 0,
+        "periode": f"{date_debut.strftime('%d/%m/%Y')} → {date_fin.strftime('%d/%m/%Y')}",
+    }
+
+
+def couleur_heatmap(tx: float | None, t_min: float, t_max: float) -> str:
+    """Échelle bleu froid → orange chaud."""
+    if tx is None:
+        return "#2a313b"
+    span = t_max - t_min if t_max > t_min else 1
+    t = max(0.0, min(1.0, (tx - t_min) / span))
+    # Palette par paliers (5 niveaux).
+    paliers = [
+        (0.0,  "#1f4068"),   # froid
+        (0.25, "#3a73a8"),
+        (0.5,  "#9aa3ad"),
+        (0.75, "#e8995c"),
+        (1.0,  "#c0392b"),   # chaud
+    ]
+    for (s1, c1), (s2, c2) in zip(paliers[:-1], paliers[1:]):
+        if t <= s2:
+            return c2 if t > (s1 + s2) / 2 else c1
+    return paliers[-1][1]
+
+
+def rendre_heatmap_html(heatmap: dict) -> str:
+    """Construit la grille HTML (CSS Grid)."""
+    t_min, t_max = heatmap["min"], heatmap["max"]
+    cells_par_semaine: dict[int, list[dict]] = {}
+    for c in heatmap["cellules"]:
+        cells_par_semaine.setdefault(c["semaine"], []).append(c)
+
+    colonnes_html = []
+    for s in range(heatmap["nb_semaines"]):
+        col = cells_par_semaine.get(s, [])
+        col.sort(key=lambda c: c["jour_semaine"])
+        cellules_html = []
+        for c in col:
+            if not c["dans_periode"]:
+                cellules_html.append('<div class="hm-cell hm-vide"></div>')
+                continue
+            couleur = couleur_heatmap(c["tx"], t_min, t_max)
+            tx_txt = f"{c['tx']:.1f} °C" if c["tx"] is not None else "n/d"
+            d_obj = datetime.fromisoformat(c["date"]).date()
+            tip = f"{d_obj.strftime('%d/%m/%Y')} : {tx_txt}"
+            cellules_html.append(
+                f'<div class="hm-cell" style="background:{couleur}" title="{tip}"></div>'
+            )
+        colonnes_html.append(f'<div class="hm-col">{"".join(cellules_html)}</div>')
+
+    etiquettes = []
+    for e in heatmap["etiquettes_mois"]:
+        etiquettes.append(
+            f'<div class="hm-mois" style="grid-column:{e["semaine"]+1}">{e["label"]}</div>'
+        )
+
+    return f"""
+    <div class="heatmap-wrapper">
+      <div class="heatmap-scroll">
+        <div class="hm-mois-row" style="grid-template-columns:repeat({heatmap['nb_semaines']},14px)">
+          {''.join(etiquettes)}
+        </div>
+        <div class="hm-grid">
+          <div class="hm-jours">
+            <span></span><span>mar</span><span></span><span>jeu</span><span></span><span>sam</span><span></span>
+          </div>
+          <div class="hm-cols">{''.join(colonnes_html)}</div>
+        </div>
+        <div class="hm-legende">
+          <span>{t_min:.0f} °C</span>
+          <span class="hm-grad"></span>
+          <span>{t_max:.0f} °C</span>
+        </div>
+      </div>
+    </div>"""
+
+
+# ── Rendu principal ───────────────────────────────────────────────────────────
+
 def main() -> int:
-    if not QUOTIDIEN.exists() or not NORMALES.exists():
-        print("Il faut d'abord lancer download.py et normales.py.", file=sys.stderr)
+    if not QUOTIDIEN.exists() or not NORMALES.exists() or not HISTORIQUE.exists():
+        print("Manquant : data/quotidien.csv, data/historique.csv ou data/normales.csv.", file=sys.stderr)
         return 1
 
     print("Lecture des données…")
-    jours = charger_quotidien()
+    quotidien = charger_csv(QUOTIDIEN)
+    historique = charger_csv(HISTORIQUE)
     normales = charger_normales()
-    if not jours:
+    if not quotidien:
         print("Aucune donnée quotidienne.", file=sys.stderr)
         return 1
 
-    derniere_date = max(j["date"] for j in jours)
-    mois_courant = derniere_date.month
-    annee_courante = derniere_date.year
+    derniere_date = max(j["date"] for j in quotidien)
+    mois, annee = derniere_date.month, derniere_date.year
     print(f"  dernière mesure : {derniere_date.isoformat()}")
-    print(f"  mois courant    : {MOIS_FR_LONG[mois_courant]} {annee_courante}")
 
     jours_mois = sorted(
-        [j for j in jours if j["date"].year == annee_courante and j["date"].month == mois_courant],
+        [j for j in quotidien if j["date"].year == annee and j["date"].month == mois],
         key=lambda j: j["date"],
     )
 
-    contexte = {
-        "mois_titre": f"{MOIS_FR_LONG[mois_courant]} {annee_courante}",
+    ctx = {
+        "mois_titre": f"{MOIS_FR_LONG[mois]} {annee}",
+        "annee": annee,
         "station": "Saint-Yrieix-la-Perche · Station 87187003 · alt. 404 m",
         "nb_jours": len(jours_mois),
         "edition": date.today().strftime("%d/%m/%Y"),
-        "kpis": construire_kpis(jours_mois, normales[mois_courant]),
-        "climogramme": construire_climogramme(jours, normales, annee_courante),
+        "kpis": construire_kpis(jours_mois, normales[mois]),
+        "climogramme": construire_climogramme(quotidien, normales, annee),
         "detail_mois": construire_detail_mois(jours_mois),
+        "bilan": construire_bilan_hydrique(quotidien, historique, annee),
+        "heatmap": construire_heatmap(quotidien + historique, derniere_date),
     }
+    print(f"  bilan hydrique  : {len([x for x in ctx['bilan']['p_etp_courant'] if x is not None])} jours en {annee}")
+    print(f"  heatmap         : {ctx['heatmap']['periode']}")
 
     SORTIE.parent.mkdir(parents=True, exist_ok=True)
-    SORTIE.write_text(rendre_html(contexte), encoding="utf-8")
+    SORTIE.write_text(rendre_html(ctx), encoding="utf-8")
     print(f"Écrit {SORTIE.relative_to(RACINE)} ({SORTIE.stat().st_size // 1024} Ko).")
     return 0
 
@@ -220,9 +443,12 @@ def rendre_html(ctx: dict) -> str:
           <div class="kpi-cmp tendance-{k['tendance']}">{k['comparaison']}</div>
         </div>""" for k in ctx["kpis"])
 
+    heatmap_html = rendre_heatmap_html(ctx["heatmap"])
+
     data_json = json.dumps({
         "climogramme": ctx["climogramme"],
         "detail_mois": ctx["detail_mois"],
+        "bilan": ctx["bilan"],
     }, ensure_ascii=False)
 
     return f"""<!DOCTYPE html>
@@ -234,18 +460,10 @@ def rendre_html(ctx: dict) -> str:
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {{
-    --bg: #1a1f26;
-    --bg-carte: #232a33;
-    --bg-section: #1f252d;
-    --texte: #e6e9ec;
-    --texte-doux: #9aa3ad;
-    --accent: #4ea1ff;
-    --accent-pluie: #4ea1ff;
-    --accent-tx: #e74c3c;
-    --accent-tn: #5dade2;
-    --bord: #2c333d;
-    --hausse: #f39c12;
-    --baisse: #56b85e;
+    --bg: #1a1f26; --bg-carte: #232a33; --bg-section: #1f252d;
+    --texte: #e6e9ec; --texte-doux: #9aa3ad;
+    --accent-pluie: #4ea1ff; --accent-tx: #e74c3c; --accent-tn: #5dade2;
+    --bord: #2c333d; --hausse: #f39c12; --baisse: #56b85e;
   }}
   * {{ box-sizing: border-box; }}
   body {{
@@ -254,29 +472,84 @@ def rendre_html(ctx: dict) -> str:
     background: var(--bg); color: var(--texte);
     max-width: 980px; margin-inline: auto;
   }}
-  header {{ display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }}
+  header {{ display: flex; justify-content: space-between; align-items: flex-end;
+            gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }}
   h1 {{ margin: 0; font-size: 24px; font-weight: 600; }}
-  h1 small {{ color: var(--texte-doux); font-weight: 400; font-size: 14px; display: block; margin-top: 4px; }}
+  h1 small {{ color: var(--texte-doux); font-weight: 400; font-size: 14px;
+              display: block; margin-top: 4px; }}
   .edition {{ color: var(--texte-doux); font-size: 13px; }}
-  .kpis {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }}
-  .kpi {{ background: var(--bg-carte); border: 1px solid var(--bord); border-radius: 6px; padding: 14px 16px; }}
+  .kpis {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }}
+  .kpi {{ background: var(--bg-carte); border: 1px solid var(--bord);
+          border-radius: 6px; padding: 14px 16px; min-width: 0; }}
   .kpi-titre {{ color: var(--texte-doux); font-size: 13px; }}
-  .kpi-valeur {{ font-size: 24px; font-weight: 600; margin: 4px 0; }}
+  .kpi-valeur {{ font-size: 24px; font-weight: 600; margin: 4px 0;
+                 word-break: break-word; }}
   .kpi-cmp {{ font-size: 12px; color: var(--texte-doux); }}
-  .tendance-up::before {{ content: "↗ "; color: var(--hausse); }}
+  .tendance-up::before  {{ content: "↗ "; color: var(--hausse); }}
   .tendance-down::before {{ content: "↘ "; color: var(--baisse); }}
-  .section {{ background: var(--bg-section); border: 1px solid var(--bord); border-radius: 6px; padding: 16px; margin-bottom: 16px; }}
-  .section h2 {{ margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--texte-doux); text-transform: uppercase; letter-spacing: 0.5px; }}
-  .legende {{ display: flex; gap: 16px; font-size: 13px; margin-bottom: 8px; color: var(--texte-doux); }}
+  /* Onglets */
+  .tabs {{ display: flex; gap: 4px; margin-bottom: 0; flex-wrap: wrap; }}
+  .tab-btn {{ background: var(--bg-carte); color: var(--texte-doux);
+              border: 1px solid var(--bord); border-bottom: none;
+              padding: 8px 14px; border-radius: 6px 6px 0 0;
+              cursor: pointer; font-size: 13px; font-family: inherit; }}
+  .tab-btn.actif {{ background: var(--bg-section); color: var(--texte); }}
+  .panneau {{ background: var(--bg-section); border: 1px solid var(--bord);
+              border-radius: 0 6px 6px 6px; padding: 16px; }}
+  .panneau:not(.actif) {{ display: none; }}
+  .panneau h2 {{ margin: 0 0 12px; font-size: 14px; font-weight: 600;
+                 color: var(--texte-doux); text-transform: uppercase; letter-spacing: 0.5px; }}
+  .panneau h2:not(:first-child) {{ margin-top: 24px; }}
+  .legende {{ display: flex; gap: 16px; font-size: 13px; margin-bottom: 8px;
+              color: var(--texte-doux); flex-wrap: wrap; }}
   .legende span::before {{ content: "■"; margin-right: 4px; }}
   .leg-pluie::before {{ color: var(--accent-pluie); }}
-  .leg-tx::before {{ color: var(--accent-tx); }}
-  .leg-tn::before {{ color: var(--accent-tn); }}
-  .leg-norm::before {{ color: #555e6b; }}
+  .leg-tx::before    {{ color: var(--accent-tx); }}
+  .leg-tn::before    {{ color: var(--accent-tn); }}
+  .leg-norm::before  {{ color: #555e6b; }}
+  .leg-bilan::before {{ color: #56b85e; }}
   canvas {{ max-height: 360px; }}
+  /* Heatmap */
+  .heatmap-wrapper {{ overflow: hidden; }}
+  .heatmap-scroll {{ overflow-x: auto; padding-bottom: 6px; }}
+  .hm-mois-row {{ display: grid; margin-left: 32px; font-size: 11px;
+                  color: var(--texte-doux); margin-bottom: 4px; }}
+  .hm-grid {{ display: flex; gap: 4px; }}
+  .hm-jours {{ display: grid; grid-template-rows: repeat(7, 14px); gap: 2px;
+               font-size: 10px; color: var(--texte-doux); padding-right: 4px; }}
+  .hm-jours span {{ line-height: 14px; }}
+  .hm-cols {{ display: flex; gap: 2px; }}
+  .hm-col {{ display: grid; grid-template-rows: repeat(7, 14px); gap: 2px; }}
+  .hm-cell {{ width: 14px; height: 14px; border-radius: 2px; }}
+  .hm-cell.hm-vide {{ background: transparent; }}
+  .hm-mois {{ grid-row: 1; }}
+  .hm-legende {{ display: flex; align-items: center; gap: 6px;
+                 margin-top: 10px; font-size: 11px; color: var(--texte-doux); }}
+  .hm-grad {{ flex: 0 0 120px; height: 8px; border-radius: 2px;
+              background: linear-gradient(to right, #1f4068, #3a73a8, #9aa3ad, #e8995c, #c0392b); }}
+
+  /* ── Mobile ── */
   @media (max-width: 720px) {{
     .kpis {{ grid-template-columns: repeat(2, 1fr); }}
-    header {{ flex-direction: column; align-items: flex-start; gap: 8px; }}
+    canvas {{ max-height: 280px; }}
+  }}
+  @media (max-width: 480px) {{
+    body {{ padding: 12px; }}
+    h1 {{ font-size: 18px; }}
+    h1 small {{ font-size: 12px; }}
+    .edition {{ font-size: 11px; }}
+    .kpis {{ gap: 8px; }}
+    .kpi {{ padding: 10px 12px; }}
+    .kpi-titre {{ font-size: 11px; }}
+    .kpi-valeur {{ font-size: 18px; }}
+    .kpi-cmp {{ font-size: 11px; }}
+    .tab-btn {{ padding: 6px 10px; font-size: 12px; flex: 1 1 auto; text-align: center; }}
+    .panneau {{ padding: 12px; border-radius: 0 0 6px 6px; }}
+    .panneau h2 {{ font-size: 12px; }}
+    .legende {{ font-size: 11px; gap: 8px; }}
+    canvas {{ max-height: 240px; }}
+    .hm-cell {{ width: 11px; height: 11px; }}
+    .hm-jours, .hm-col {{ grid-template-rows: repeat(7, 11px); }}
   }}
 </style>
 </head>
@@ -291,7 +564,13 @@ def rendre_html(ctx: dict) -> str:
 <div class="kpis">{cartes}
 </div>
 
-<div class="section">
+<div class="tabs" role="tablist">
+  <button class="tab-btn actif" data-cible="mois">Mois en cours</button>
+  <button class="tab-btn"       data-cible="bilan">Bilan hydrique</button>
+  <button class="tab-btn"       data-cible="heatmap">Heatmap T° max</button>
+</div>
+
+<div id="mois" class="panneau actif">
   <h2>Détail jour par jour — {ctx['mois_titre']}</h2>
   <div class="legende">
     <span class="leg-pluie">Précipitations (mm)</span>
@@ -299,22 +578,40 @@ def rendre_html(ctx: dict) -> str:
     <span class="leg-tn">T° min (°C)</span>
   </div>
   <canvas id="detail"></canvas>
-</div>
 
-<div class="section">
-  <h2>Climogramme {ctx['mois_titre'].split()[-1]} — pluie et température</h2>
+  <h2>Climogramme {ctx['annee']} — pluie et température</h2>
   <div class="legende">
-    <span class="leg-pluie">Pluie {ctx['mois_titre'].split()[-1]} (mm)</span>
+    <span class="leg-pluie">Pluie {ctx['annee']} (mm)</span>
     <span class="leg-norm">Normale 1995-2024 (mm)</span>
     <span class="leg-tx">T° moyenne (°C)</span>
   </div>
   <canvas id="climo"></canvas>
 </div>
 
+<div id="bilan" class="panneau">
+  <h2>Bilan hydrique {ctx['annee']} — P − ETP cumulée depuis le 1er janvier</h2>
+  <div class="legende">
+    <span class="leg-bilan">{ctx['annee']} (mm)</span>
+    <span class="leg-norm">Référence 1995-2024 (mm)</span>
+  </div>
+  <canvas id="bilan_chart"></canvas>
+  <p style="font-size:12px;color:var(--texte-doux);margin-top:8px">
+    ETP calculée par la formule de Hargreaves-Samani (latitude {LATITUDE_DEG:.3f}°,
+    rayonnement extra-terrestre FAO-56). Une valeur positive indique un excédent
+    hydrique cumulé, négative un déficit.
+  </p>
+</div>
+
+<div id="heatmap" class="panneau">
+  <h2>T° max — 12 mois glissants ({ctx['heatmap']['periode']})</h2>
+  {heatmap_html}
+</div>
+
 <script>
 const DATA = {data_json};
 Chart.defaults.color = '#9aa3ad';
 Chart.defaults.borderColor = '#2c333d';
+Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
 new Chart(document.getElementById('detail'), {{
   type: 'bar',
@@ -322,12 +619,14 @@ new Chart(document.getElementById('detail'), {{
     labels: DATA.detail_mois.labels,
     datasets: [
       {{ label: 'Pluie (mm)', data: DATA.detail_mois.rr, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 2 }},
-      {{ label: 'T° max (°C)', data: DATA.detail_mois.tx, type: 'line', borderColor: '#e74c3c', backgroundColor: '#e74c3c', tension: 0.25, yAxisID: 'y1', order: 1 }},
-      {{ label: 'T° min (°C)', data: DATA.detail_mois.tn, type: 'line', borderColor: '#5dade2', backgroundColor: '#5dade2', borderDash: [4,4], tension: 0.25, yAxisID: 'y1', order: 1 }},
+      {{ label: 'T° max', data: DATA.detail_mois.tx, type: 'line', borderColor: '#e74c3c',
+         backgroundColor: '#e74c3c', tension: 0.25, yAxisID: 'y1', order: 1, spanGaps: true }},
+      {{ label: 'T° min', data: DATA.detail_mois.tn, type: 'line', borderColor: '#5dade2',
+         backgroundColor: '#5dade2', borderDash: [4,4], tension: 0.25, yAxisID: 'y1', order: 1, spanGaps: true }},
     ],
   }},
   options: {{
-    responsive: true,
+    responsive: true, maintainAspectRatio: false,
     plugins: {{ legend: {{ display: false }} }},
     scales: {{
       y:  {{ position: 'left',  title: {{ display: true, text: 'mm' }} }},
@@ -340,20 +639,58 @@ new Chart(document.getElementById('climo'), {{
   data: {{
     labels: DATA.climogramme.labels,
     datasets: [
-      {{ type: 'bar', label: 'Pluie observée', data: DATA.climogramme.rr_reel, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 3 }},
-      {{ type: 'bar', label: 'Pluie normale',  data: DATA.climogramme.rr_norm, backgroundColor: '#3a4452', yAxisID: 'y', order: 4 }},
-      {{ type: 'line', label: 'T° moyenne',    data: DATA.climogramme.t_reel, borderColor: '#e74c3c', backgroundColor: '#e74c3c', tension: 0.3, yAxisID: 'y1', order: 1, spanGaps: true }},
-      {{ type: 'line', label: 'T° normale',    data: DATA.climogramme.t_norm, borderColor: '#9aa3ad', borderDash: [5,5], tension: 0.3, yAxisID: 'y1', order: 2, pointRadius: 0 }},
+      {{ type: 'bar',  label: 'Pluie observée', data: DATA.climogramme.rr_reel, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 3 }},
+      {{ type: 'bar',  label: 'Pluie normale',  data: DATA.climogramme.rr_norm, backgroundColor: '#3a4452', yAxisID: 'y', order: 4 }},
+      {{ type: 'line', label: 'T° moyenne',     data: DATA.climogramme.t_reel, borderColor: '#e74c3c',
+         backgroundColor: '#e74c3c', tension: 0.3, yAxisID: 'y1', order: 1, spanGaps: true }},
+      {{ type: 'line', label: 'T° normale',     data: DATA.climogramme.t_norm, borderColor: '#9aa3ad',
+         borderDash: [5,5], tension: 0.3, yAxisID: 'y1', order: 2, pointRadius: 0 }},
     ],
   }},
   options: {{
-    responsive: true,
+    responsive: true, maintainAspectRatio: false,
     plugins: {{ legend: {{ display: false }} }},
     scales: {{
       y:  {{ position: 'left',  title: {{ display: true, text: 'mm cumulés' }} }},
       y1: {{ position: 'right', title: {{ display: true, text: '°C' }}, grid: {{ drawOnChartArea: false }} }},
     }},
   }}
+}});
+
+new Chart(document.getElementById('bilan_chart'), {{
+  type: 'line',
+  data: {{
+    labels: DATA.bilan.labels,
+    datasets: [
+      {{ label: 'P − ETP ' + DATA.bilan.annee,
+         data: DATA.bilan.p_etp_courant,
+         borderColor: '#56b85e', backgroundColor: 'rgba(86,184,94,0.12)',
+         fill: true, tension: 0.2, pointRadius: 0, spanGaps: true, borderWidth: 2 }},
+      {{ label: 'Référence 1995-2024',
+         data: DATA.bilan.p_etp_reference,
+         borderColor: '#9aa3ad', borderDash: [5,5],
+         fill: false, tension: 0.2, pointRadius: 0, spanGaps: true, borderWidth: 1.5 }},
+    ],
+  }},
+  options: {{
+    responsive: true, maintainAspectRatio: false,
+    plugins: {{ legend: {{ display: false }} }},
+    scales: {{
+      x: {{ ticks: {{ maxTicksLimit: 12, autoSkip: true }} }},
+      y: {{ title: {{ display: true, text: 'mm' }},
+            grid: {{ color: ctx => ctx.tick.value === 0 ? '#56b85e55' : '#2c333d' }} }},
+    }},
+  }}
+}});
+
+// Onglets
+document.querySelectorAll('.tab-btn').forEach(btn => {{
+  btn.addEventListener('click', () => {{
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('actif'));
+    document.querySelectorAll('.panneau').forEach(p => p.classList.remove('actif'));
+    btn.classList.add('actif');
+    document.getElementById(btn.dataset.cible).classList.add('actif');
+  }});
 }});
 </script>
 </body>
