@@ -48,7 +48,7 @@ RACINE = Path(__file__).parent
 QUOTIDIEN = RACINE / "data" / "quotidien.csv"
 HISTORIQUE = RACINE / "data" / "historique.csv"
 NORMALES = RACINE / "data" / "normales.csv"
-SORTIE = RACINE / "output" / "index.html"
+SORTIE = RACINE / "docs" / "index.html"
 
 LATITUDE_DEG = 45.513667  # St-Yrieix-la-Perche
 ANNEE_REF_DEBUT, ANNEE_REF_FIN = 1995, 2024

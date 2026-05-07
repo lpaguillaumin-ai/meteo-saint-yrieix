@@ -7,13 +7,7 @@ on:
   workflow_dispatch:  # permet aussi un déclenchement manuel depuis l'onglet Actions
 
 permissions:
-  contents: write   # pour committer data/quotidien.csv et output/
-  pages: write      # pour publier sur GitHub Pages
-  id-token: write   # requis par actions/deploy-pages
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
+  contents: write   # pour committer data/quotidien.csv et docs/
 
 jobs:
   build:
@@ -35,7 +29,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/quotidien.csv output/
+          git add data/quotidien.csv docs/index.html
           if git diff --staged --quiet; then
             echo "Aucun changement à committer."
             exit 0
@@ -51,17 +45,3 @@ jobs:
           done
           echo "Échec du push après 3 tentatives." >&2
           exit 1
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: output
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
