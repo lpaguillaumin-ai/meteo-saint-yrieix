@@ -14,6 +14,7 @@ import json
 import math
 import sys
 from datetime import date, datetime, timedelta
+from collections import defaultdict
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -390,6 +391,216 @@ def rendre_heatmap_html(heatmap: dict) -> str:
     </div>"""
 
 
+# ── Records historiques ───────────────────────────────────────────────────────
+
+def _fdr(d) -> str:
+    """Formate une date pour l'affichage dans les records."""
+    return d.strftime("%d/%m/%Y") if d is not None else "—"
+
+
+def construire_records(quotidien: list[dict], historique: list[dict]) -> dict:
+    tout = sorted(historique + quotidien, key=lambda j: j["date"])
+    annee = max(j["date"].year for j in quotidien)
+    jours_an = [j for j in tout if j["date"].year == annee]
+
+    def rec_max(jours, var):
+        v = [(j[var], j["date"]) for j in jours if j[var] is not None]
+        return max(v, key=lambda x: x[0]) if v else (None, None)
+
+    def rec_min(jours, var):
+        v = [(j[var], j["date"]) for j in jours if j[var] is not None]
+        return min(v, key=lambda x: x[0]) if v else (None, None)
+
+    # Records absolus
+    tx_rv, tx_rd = rec_max(tout, "TX");   tx_av, tx_ad = rec_max(jours_an, "TX")
+    tn_rv, tn_rd = rec_min(tout, "TN");   tn_av, tn_ad = rec_min(jours_an, "TN")
+    rr_rv, rr_rd = rec_max(tout, "RR");   rr_av, rr_ad = rec_max(jours_an, "RR")
+    fx_rv, fx_rd = rec_max(tout, "FXI");  fx_av, fx_ad = rec_max(jours_an, "FXI")
+    it_rv, it_rd = rec_max(tout, "INST"); it_av, it_ad = rec_max(jours_an, "INST")
+
+    # Pluies mensuelles
+    mois_rr: dict = defaultdict(float)
+    mois_n:  dict = defaultdict(int)
+    for j in tout:
+        if j["RR"] is not None:
+            k = (j["date"].year, j["date"].month)
+            mois_rr[k] += j["RR"]
+            mois_n[k]  += 1
+    complets = {k: mois_rr[k] for k, n in mois_n.items() if n >= 25}
+
+    def lab_mois(k): return f"{MOIS_FR_LONG[k[1]]} {k[0]}" if k else "—"
+
+    k_rrmax = max(complets, key=complets.get) if complets else None
+    k_rrmin = min(complets, key=complets.get) if complets else None
+    rrm_max_v = complets[k_rrmax] if k_rrmax else None
+    rrm_min_v = complets[k_rrmin] if k_rrmin else None
+
+    comp_an = {k: complets[k] for k in complets if k[0] == annee}
+    k_rran_max = max(comp_an, key=comp_an.get) if comp_an else None
+    k_rran_min = min(comp_an, key=comp_an.get) if comp_an else None
+
+    # Séries consécutives
+    def serie(jours, var, test):
+        ml, cur, dd, dm_d, dm_f = 0, 0, None, None, None
+        for j in jours:
+            if j[var] is not None and test(j[var]):
+                if cur == 0: dd = j["date"]
+                cur += 1
+                if cur > ml: ml, dm_d, dm_f = cur, dd, j["date"]
+            elif j[var] is not None:
+                cur = 0
+        return ml, dm_d, dm_f
+
+    sec_l, sec_d, sec_f = serie(tout,     "RR", lambda v: v < 0.2)
+    sec_al, sec_ad, sec_af = serie(jours_an, "RR", lambda v: v < 0.2)
+    gel_l, gel_d, gel_f = serie(tout,     "TN", lambda v: v <= 0.0)
+    gel_al, gel_ad, gel_af = serie(jours_an, "TN", lambda v: v <= 0.0)
+
+    # Mois chaud / froid (Tmoy)
+    mois_tm: dict = defaultdict(list)
+    for j in tout:
+        if j["TN"] is not None and j["TX"] is not None:
+            mois_tm[(j["date"].year, j["date"].month)].append((j["TN"] + j["TX"]) / 2)
+    tm = {k: sum(v) / len(v) for k, v in mois_tm.items() if len(v) >= 25}
+    k_tmc = max(tm, key=tm.get) if tm else None
+    k_tmf = min(tm, key=tm.get) if tm else None
+    tm_an = {k: tm[k] for k in tm if k[0] == annee}
+    k_tmc_an = max(tm_an, key=tm_an.get) if tm_an else None
+    k_tmf_an = min(tm_an, key=tm_an.get) if tm_an else None
+
+    # Helpers
+    def bm(r, a): return r is not None and a is not None and a >= r
+    def bi(r, a): return r is not None and a is not None and a <= r
+
+    lignes = [
+        # ── Températures ────────────────────────────────────────────────────
+        {"cat": "🌡️", "variable": "T° maximale absolue (TX)",
+         "rv": f"{tx_rv:.1f} °C", "rl": _fdr(tx_rd),
+         "av": f"{tx_av:.1f} °C" if tx_av else "—", "al": _fdr(tx_ad),
+         "battu": bm(tx_rv, tx_av)},
+        {"cat": "🌡️", "variable": "T° minimale absolue (TN)",
+         "rv": f"{tn_rv:.1f} °C", "rl": _fdr(tn_rd),
+         "av": f"{tn_av:.1f} °C" if tn_av else "—", "al": _fdr(tn_ad),
+         "battu": bi(tn_rv, tn_av)},
+        {"cat": "🌡️", "variable": "Mois le plus chaud (Tm moy.)",
+         "rv": f"{tm[k_tmc]:.1f} °C" if k_tmc else "—", "rl": lab_mois(k_tmc),
+         "av": f"{tm_an[k_tmc_an]:.1f} °C" if k_tmc_an else "—", "al": lab_mois(k_tmc_an),
+         "battu": bm(tm.get(k_tmc), tm_an.get(k_tmc_an))},
+        {"cat": "🌡️", "variable": "Mois le plus froid (Tm moy.)",
+         "rv": f"{tm[k_tmf]:.1f} °C" if k_tmf else "—", "rl": lab_mois(k_tmf),
+         "av": f"{tm_an[k_tmf_an]:.1f} °C" if k_tmf_an else "—", "al": lab_mois(k_tmf_an),
+         "battu": bi(tm.get(k_tmf), tm_an.get(k_tmf_an))},
+        # ── Pluie ────────────────────────────────────────────────────────────
+        {"cat": "🌧️", "variable": "Pluie max en 24 h (RR)",
+         "rv": f"{rr_rv:.1f} mm", "rl": _fdr(rr_rd),
+         "av": f"{rr_av:.1f} mm" if rr_av else "—", "al": _fdr(rr_ad),
+         "battu": bm(rr_rv, rr_av)},
+        {"cat": "🌧️", "variable": "Pluie mensuelle maximale",
+         "rv": f"{rrm_max_v:.0f} mm" if rrm_max_v else "—", "rl": lab_mois(k_rrmax),
+         "av": f"{comp_an[k_rran_max]:.0f} mm" if k_rran_max else "—", "al": lab_mois(k_rran_max),
+         "battu": bm(rrm_max_v, comp_an.get(k_rran_max))},
+        {"cat": "🌧️", "variable": "Pluie mensuelle minimale",
+         "rv": f"{rrm_min_v:.0f} mm" if rrm_min_v else "—", "rl": lab_mois(k_rrmin),
+         "av": f"{comp_an[k_rran_min]:.0f} mm" if k_rran_min else "—", "al": lab_mois(k_rran_min),
+         "battu": bi(rrm_min_v, comp_an.get(k_rran_min))},
+        {"cat": "🌧️", "variable": "Série la plus longue sans pluie (< 0,2 mm)",
+         "rv": f"{sec_l} j", "rl": f"{_fdr(sec_d)} → {_fdr(sec_f)}",
+         "av": f"{sec_al} j" if sec_al else "—",
+         "al": f"{_fdr(sec_ad)} → {_fdr(sec_af)}" if sec_al else "—",
+         "battu": sec_al >= sec_l if sec_al and sec_l else False},
+        # ── Vent ─────────────────────────────────────────────────────────────
+        {"cat": "💨", "variable": "Vent maximal (rafale FXI)",
+         "rv": f"{fx_rv * 3.6:.0f} km/h" if fx_rv else "—", "rl": _fdr(fx_rd),
+         "av": f"{fx_av * 3.6:.0f} km/h" if fx_av else "—", "al": _fdr(fx_ad),
+         "battu": bm(fx_rv, fx_av)},
+        # ── Gel ──────────────────────────────────────────────────────────────
+        {"cat": "❄️", "variable": "Série de gels consécutifs (TN ≤ 0 °C)",
+         "rv": f"{gel_l} j", "rl": f"{_fdr(gel_d)} → {_fdr(gel_f)}",
+         "av": f"{gel_al} j" if gel_al else "—",
+         "al": f"{_fdr(gel_ad)} → {_fdr(gel_af)}" if gel_al else "—",
+         "battu": gel_al >= gel_l if gel_al and gel_l else False},
+        # ── Insolation ───────────────────────────────────────────────────────
+        {"cat": "☀️", "variable": "Ensoleillement max (journée) ⚠️",
+         "rv": f"{it_rv / 60:.1f} h" if it_rv else "—", "rl": _fdr(it_rd),
+         "av": f"{it_av / 60:.1f} h" if it_av else "—", "al": _fdr(it_ad),
+         "battu": bm(it_rv, it_av)},
+    ]
+
+    tuiles = [
+        {"icone": "🌡️", "couleur": "#e74c3c", "titre": "Chaleur record",
+         "rv": f"{tx_rv:.1f} °C" if tx_rv else "—", "rl": _fdr(tx_rd),
+         "at": f"{tx_av:.1f} °C le {_fdr(tx_ad)}" if tx_av else "—",
+         "battu": bm(tx_rv, tx_av)},
+        {"icone": "❄️", "couleur": "#5dade2", "titre": "Froid record",
+         "rv": f"{tn_rv:.1f} °C" if tn_rv else "—", "rl": _fdr(tn_rd),
+         "at": f"{tn_av:.1f} °C le {_fdr(tn_ad)}" if tn_av else "—",
+         "battu": bi(tn_rv, tn_av)},
+        {"icone": "🌧️", "couleur": "#4ea1ff", "titre": "Pluie record (24 h)",
+         "rv": f"{rr_rv:.1f} mm" if rr_rv else "—", "rl": _fdr(rr_rd),
+         "at": f"{rr_av:.1f} mm le {_fdr(rr_ad)}" if rr_av else "—",
+         "battu": bm(rr_rv, rr_av)},
+        {"icone": "💨", "couleur": "#f39c12", "titre": "Vent record",
+         "rv": f"{fx_rv * 3.6:.0f} km/h" if fx_rv else "—", "rl": _fdr(fx_rd),
+         "at": f"{fx_av * 3.6:.0f} km/h le {_fdr(fx_ad)}" if fx_av else "—",
+         "battu": bm(fx_rv, fx_av)},
+    ]
+
+    return {
+        "annee": annee,
+        "periode": f"{tout[0]['date'].strftime('%d/%m/%Y')} → {tout[-1]['date'].strftime('%d/%m/%Y')}",
+        "tuiles": tuiles,
+        "lignes": lignes,
+    }
+
+
+def rendre_records_html(records: dict) -> str:
+    annee = records["annee"]
+
+    tuiles_html = []
+    for t in records["tuiles"]:
+        badge = ' <span class="rec-badge">★ RECORD</span>' if t["battu"] else ""
+        tuiles_html.append(
+            f'<div class="rec-tuile" style="border-top-color:{t["couleur"]}">'
+            f'<div class="rec-ico">{t["icone"]}</div>'
+            f'<div class="rec-titre">{t["titre"]}{badge}</div>'
+            f'<div class="rec-val-big" style="color:{t["couleur"]}">{t["rv"]}</div>'
+            f'<div class="rec-date">{t["rl"]}</div>'
+            f'<div class="rec-an">{annee} : {t["at"]}</div>'
+            f'</div>'
+        )
+
+    lignes_html = []
+    for lig in records["lignes"]:
+        cls = ' class="rec-battu"' if lig["battu"] else ""
+        star = ' <span class="rec-badge">★</span>' if lig["battu"] else ""
+        lignes_html.append(
+            f'<tr{cls}>'
+            f'<td>{lig["cat"]} {lig["variable"]}</td>'
+            f'<td class="rn">{lig["rv"]}</td>'
+            f'<td class="rd">{lig["rl"]}</td>'
+            f'<td class="rn">{lig["av"]}{star}</td>'
+            f'<td class="rd">{lig["al"]}</td>'
+            f'</tr>'
+        )
+
+    return (
+        f'<div class="rec-tuiles">{"".join(tuiles_html)}</div>'
+        f'<div class="rec-wrap">'
+        f'<table class="rec-table">'
+        f'<thead><tr>'
+        f'<th>Variable</th><th>Record historique</th><th>Date / Période</th>'
+        f'<th>{annee}</th><th>Date / Période</th>'
+        f'</tr></thead>'
+        f'<tbody>{"".join(lignes_html)}</tbody>'
+        f'</table></div>'
+        f'<p class="rec-note">'
+        f'⚠️ Ensoleillement (☀️) : 30 % de valeurs manquantes avant 2000 —'
+        f' le record affiché est indicatif. Vent : valeur en m/s convertie en km/h. '
+        f'Données : station 87187003, {records["periode"]}.'
+        f'</p>'
+    )
+
+
 # ── Rendu principal ───────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -425,6 +636,7 @@ def main() -> int:
         "detail_mois": construire_detail_mois(jours_mois),
         "bilan": construire_bilan_hydrique(quotidien, historique, annee),
         "heatmap": construire_heatmap(quotidien + historique, derniere_date),
+        "records": construire_records(quotidien, historique),
     }
     print(f"  bilan hydrique  : {len([x for x in ctx['bilan']['p_etp_courant'] if x is not None])} jours en {annee}")
     print(f"  heatmap         : {ctx['heatmap']['periode']}")
@@ -444,6 +656,7 @@ def rendre_html(ctx: dict) -> str:
         </div>""" for k in ctx["kpis"])
 
     heatmap_html = rendre_heatmap_html(ctx["heatmap"])
+    records_html = rendre_records_html(ctx["records"])
 
     data_json = json.dumps({
         "climogramme": ctx["climogramme"],
@@ -528,10 +741,39 @@ def rendre_html(ctx: dict) -> str:
   .hm-grad {{ flex: 0 0 120px; height: 8px; border-radius: 2px;
               background: linear-gradient(to right, #1f4068, #3a73a8, #9aa3ad, #e8995c, #c0392b); }}
 
+  /* ── Records ── */
+  .rec-tuiles {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }}
+  .rec-tuile {{ background: var(--bg-carte); border: 1px solid var(--bord);
+                border-top: 3px solid; border-radius: 6px; padding: 14px; }}
+  .rec-ico {{ font-size: 22px; margin-bottom: 6px; }}
+  .rec-titre {{ font-size: 11px; color: var(--texte-doux); text-transform: uppercase;
+                letter-spacing: 0.5px; margin-bottom: 4px; }}
+  .rec-val-big {{ font-size: 26px; font-weight: 700; margin-bottom: 2px; line-height: 1.1; }}
+  .rec-date {{ font-size: 12px; color: var(--texte-doux); margin-bottom: 8px; }}
+  .rec-an {{ font-size: 12px; color: var(--texte-doux); border-top: 1px solid var(--bord);
+             padding-top: 7px; }}
+  .rec-badge {{ background: #f39c12; color: #1a1f26; font-size: 10px; font-weight: 700;
+                padding: 2px 5px; border-radius: 3px; vertical-align: middle;
+                white-space: nowrap; }}
+  .rec-wrap {{ overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 4px; }}
+  .rec-table {{ width: 100%; border-collapse: collapse; font-size: 13px; min-width: 560px; }}
+  .rec-table thead th {{ text-align: left; padding: 8px 10px; background: var(--bg-carte);
+                          color: var(--texte-doux); font-weight: 600; font-size: 11px;
+                          text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }}
+  .rec-table tbody td {{ padding: 8px 10px; border-top: 1px solid var(--bord);
+                          vertical-align: middle; }}
+  .rec-table tbody tr:hover {{ background: rgba(255,255,255,0.03); }}
+  .rn {{ text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }}
+  .rd {{ color: var(--texte-doux); font-size: 12px; white-space: nowrap; }}
+  .rec-battu {{ background: rgba(243,156,18,0.08) !important; }}
+  .rec-battu td:first-child {{ font-weight: 600; }}
+  .rec-note {{ font-size: 12px; color: var(--texte-doux); margin-top: 12px;
+               line-height: 1.5; border-top: 1px solid var(--bord); padding-top: 10px; }}
   /* ── Mobile ── */
   @media (max-width: 720px) {{
     .kpis {{ grid-template-columns: repeat(2, 1fr); }}
     canvas {{ max-height: 280px; }}
+    .rec-tuiles {{ grid-template-columns: repeat(2, 1fr); }}
   }}
   @media (max-width: 480px) {{
     body {{ padding: 12px; }}
@@ -550,6 +792,10 @@ def rendre_html(ctx: dict) -> str:
     canvas {{ max-height: 240px; }}
     .hm-cell {{ width: 11px; height: 11px; }}
     .hm-jours, .hm-col {{ grid-template-rows: repeat(7, 11px); }}
+    .rec-tuiles {{ gap: 8px; }}
+    .rec-tuile {{ padding: 10px; }}
+    .rec-val-big {{ font-size: 20px; }}
+    .rec-table {{ font-size: 12px; }}
   }}
 </style>
 </head>
@@ -568,6 +814,7 @@ def rendre_html(ctx: dict) -> str:
   <button class="tab-btn actif" data-cible="mois">Mois en cours</button>
   <button class="tab-btn"       data-cible="bilan">Bilan hydrique</button>
   <button class="tab-btn"       data-cible="heatmap">Heatmap T° max</button>
+  <button class="tab-btn"       data-cible="records">Records</button>
 </div>
 
 <div id="mois" class="panneau actif">
@@ -605,6 +852,11 @@ def rendre_html(ctx: dict) -> str:
 <div id="heatmap" class="panneau">
   <h2>T° max — 12 mois glissants ({ctx['heatmap']['periode']})</h2>
   {heatmap_html}
+</div>
+
+<div id="records" class="panneau">
+  <h2>Records historiques — {ctx['records']['periode']}</h2>
+  {records_html}
 </div>
 
 <script>

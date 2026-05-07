@@ -75,10 +75,39 @@
   .hm-grad { flex: 0 0 120px; height: 8px; border-radius: 2px;
               background: linear-gradient(to right, #1f4068, #3a73a8, #9aa3ad, #e8995c, #c0392b); }
 
+  /* ── Records ── */
+  .rec-tuiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .rec-tuile { background: var(--bg-carte); border: 1px solid var(--bord);
+                border-top: 3px solid; border-radius: 6px; padding: 14px; }
+  .rec-ico { font-size: 22px; margin-bottom: 6px; }
+  .rec-titre { font-size: 11px; color: var(--texte-doux); text-transform: uppercase;
+                letter-spacing: 0.5px; margin-bottom: 4px; }
+  .rec-val-big { font-size: 26px; font-weight: 700; margin-bottom: 2px; line-height: 1.1; }
+  .rec-date { font-size: 12px; color: var(--texte-doux); margin-bottom: 8px; }
+  .rec-an { font-size: 12px; color: var(--texte-doux); border-top: 1px solid var(--bord);
+             padding-top: 7px; }
+  .rec-badge { background: #f39c12; color: #1a1f26; font-size: 10px; font-weight: 700;
+                padding: 2px 5px; border-radius: 3px; vertical-align: middle;
+                white-space: nowrap; }
+  .rec-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 4px; }
+  .rec-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 560px; }
+  .rec-table thead th { text-align: left; padding: 8px 10px; background: var(--bg-carte);
+                          color: var(--texte-doux); font-weight: 600; font-size: 11px;
+                          text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+  .rec-table tbody td { padding: 8px 10px; border-top: 1px solid var(--bord);
+                          vertical-align: middle; }
+  .rec-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+  .rn { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
+  .rd { color: var(--texte-doux); font-size: 12px; white-space: nowrap; }
+  .rec-battu { background: rgba(243,156,18,0.08) !important; }
+  .rec-battu td:first-child { font-weight: 600; }
+  .rec-note { font-size: 12px; color: var(--texte-doux); margin-top: 12px;
+               line-height: 1.5; border-top: 1px solid var(--bord); padding-top: 10px; }
   /* ── Mobile ── */
   @media (max-width: 720px) {
     .kpis { grid-template-columns: repeat(2, 1fr); }
     canvas { max-height: 280px; }
+    .rec-tuiles { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 480px) {
     body { padding: 12px; }
@@ -97,6 +126,10 @@
     canvas { max-height: 240px; }
     .hm-cell { width: 11px; height: 11px; }
     .hm-jours, .hm-col { grid-template-rows: repeat(7, 11px); }
+    .rec-tuiles { gap: 8px; }
+    .rec-tuile { padding: 10px; }
+    .rec-val-big { font-size: 20px; }
+    .rec-table { font-size: 12px; }
   }
 </style>
 </head>
@@ -105,7 +138,7 @@
   <h1>Mai 2026 — Saint-Yrieix-la-Perche
     <small>Saint-Yrieix-la-Perche · Station 87187003 · alt. 404 m · 4 jours</small>
   </h1>
-  <div class="edition">Édité le 06/05/2026</div>
+  <div class="edition">Édité le 07/05/2026</div>
 </header>
 
 <div class="kpis">
@@ -138,6 +171,7 @@
   <button class="tab-btn actif" data-cible="mois">Mois en cours</button>
   <button class="tab-btn"       data-cible="bilan">Bilan hydrique</button>
   <button class="tab-btn"       data-cible="heatmap">Heatmap T° max</button>
+  <button class="tab-btn"       data-cible="records">Records</button>
 </div>
 
 <div id="mois" class="panneau actif">
@@ -193,6 +227,11 @@
         </div>
       </div>
     </div>
+</div>
+
+<div id="records" class="panneau">
+  <h2>Records historiques — 08/07/1994 → 04/05/2026</h2>
+  <div class="rec-tuiles"><div class="rec-tuile" style="border-top-color:#e74c3c"><div class="rec-ico">🌡️</div><div class="rec-titre">Chaleur record</div><div class="rec-val-big" style="color:#e74c3c">38.7 °C</div><div class="rec-date">11/08/2025</div><div class="rec-an">2026 : 26.6 °C le 08/04/2026</div></div><div class="rec-tuile" style="border-top-color:#5dade2"><div class="rec-ico">❄️</div><div class="rec-titre">Froid record</div><div class="rec-val-big" style="color:#5dade2">-12.8 °C</div><div class="rec-date">09/02/2012</div><div class="rec-an">2026 : -10.1 °C le 07/01/2026</div></div><div class="rec-tuile" style="border-top-color:#4ea1ff"><div class="rec-ico">🌧️</div><div class="rec-titre">Pluie record (24 h)</div><div class="rec-val-big" style="color:#4ea1ff">73.6 mm</div><div class="rec-date">08/08/2018</div><div class="rec-an">2026 : 34.0 mm le 15/02/2026</div></div><div class="rec-tuile" style="border-top-color:#f39c12"><div class="rec-ico">💨</div><div class="rec-titre">Vent record</div><div class="rec-val-big" style="color:#f39c12">114 km/h</div><div class="rec-date">01/09/2011</div><div class="rec-an">2026 : 91 km/h le 11/02/2026</div></div></div><div class="rec-wrap"><table class="rec-table"><thead><tr><th>Variable</th><th>Record historique</th><th>Date / Période</th><th>2026</th><th>Date / Période</th></tr></thead><tbody><tr><td>🌡️ T° maximale absolue (TX)</td><td class="rn">38.7 °C</td><td class="rd">11/08/2025</td><td class="rn">26.6 °C</td><td class="rd">08/04/2026</td></tr><tr><td>🌡️ T° minimale absolue (TN)</td><td class="rn">-12.8 °C</td><td class="rd">09/02/2012</td><td class="rn">-10.1 °C</td><td class="rd">07/01/2026</td></tr><tr><td>🌡️ Mois le plus chaud (Tm moy.)</td><td class="rn">24.1 °C</td><td class="rd">Août 2003</td><td class="rn">13.3 °C</td><td class="rd">Avril 2026</td></tr><tr><td>🌡️ Mois le plus froid (Tm moy.)</td><td class="rn">0.0 °C</td><td class="rd">Février 2012</td><td class="rn">4.1 °C</td><td class="rd">Janvier 2026</td></tr><tr><td>🌧️ Pluie max en 24 h (RR)</td><td class="rn">73.6 mm</td><td class="rd">08/08/2018</td><td class="rn">34.0 mm</td><td class="rd">15/02/2026</td></tr><tr><td>🌧️ Pluie mensuelle maximale</td><td class="rn">348 mm</td><td class="rd">Novembre 2000</td><td class="rn">240 mm</td><td class="rd">Février 2026</td></tr><tr><td>🌧️ Pluie mensuelle minimale</td><td class="rn">5 mm</td><td class="rd">Avril 2011</td><td class="rn">18 mm</td><td class="rd">Avril 2026</td></tr><tr><td>🌧️ Série la plus longue sans pluie (< 0,2 mm)</td><td class="rn">28 j</td><td class="rd">29/03/1997 → 25/04/1997</td><td class="rn">9 j</td><td class="rd">19/04/2026 → 27/04/2026</td></tr><tr><td>💨 Vent maximal (rafale FXI)</td><td class="rn">114 km/h</td><td class="rd">01/09/2011</td><td class="rn">91 km/h</td><td class="rd">11/02/2026</td></tr><tr><td>❄️ Série de gels consécutifs (TN ≤ 0 °C)</td><td class="rn">22 j</td><td class="rd">15/02/2005 → 08/03/2005</td><td class="rn">8 j</td><td class="rd">01/01/2026 → 08/01/2026</td></tr><tr><td>☀️ Ensoleillement max (journée) ⚠️</td><td class="rn">14.8 h</td><td class="rd">21/06/2008</td><td class="rn">12.8 h</td><td class="rd">24/04/2026</td></tr></tbody></table></div><p class="rec-note">⚠️ Ensoleillement (☀️) : 30 % de valeurs manquantes avant 2000 — le record affiché est indicatif. Vent : valeur en m/s convertie en km/h. Données : station 87187003, 08/07/1994 → 04/05/2026.</p>
 </div>
 
 <script>
