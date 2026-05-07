@@ -1,9 +1,33 @@
 """Génère output/index.html : tableau de bord météo St-Yrieix.
 
-Quatre onglets :
-- Mois en cours (KPIs + détail jour-par-jour + climogramme 12 mois)
-- Bilan hydrique (P-ETP cumulée depuis le 1er janvier vs référence 1995-2024)
-- Heatmap T° max (12 mois glissants)
+Onglets :
+  Mois en cours  — KPIs + détail jour-par-jour + climogramme 12 mois
+  Bilan hydrique — P cumulée, ETP cumulée et bilan P-ETP vs référence 1995-2024
+  Heatmap T° max — calendrier 12 mois glissants
+  Records        — valeurs extrêmes depuis 1994
+  Phénologie     — sommes de degrés-jours et seuils agroclimatiques
+
+Formules et sources
+───────────────────
+ETP Hargreaves-Samani (1985)
+  ETP = 0,0023 × (Tmoy + 17,8) × √(TX − TN) × Ra
+  Ra : rayonnement extra-terrestre FAO-56 (Allen et al., 1998),
+       latitude 45,513667 °N, constante solaire 0,0820 MJ·m⁻²·min⁻¹.
+  Réf. : Hargreaves & Samani, Applied Engineering in Agriculture, 1(2), 1985.
+
+Degrés-jours de croissance (DJC / GDD)
+  DJC(base) = Σ max(0, (TN + TX) / 2 − Tbase) depuis le 1ᵉʳ janvier
+  Base 0 °C  : développement végétatif général (herbe)
+  Base 6 °C  : céréales (blé, orge)
+  Base 10 °C : maïs
+  Réf. : McMaster & Wilhelm, Agric. Forest Meteorol. 87(4), 1997.
+
+Seuils phénologiques
+  200 DJC base 0 °C  : démarrage pousse de l'herbe — INRAE / ARVALIS
+  1 000 DJC base 6 °C : épiaison blé tendre — ARVALIS, Guide Grandes Cultures 2022
+  1 700 DJC base 10 °C : floraison maïs grain — ARVALIS / INRAE
+
+Normales de référence : fenêtre 1995-2024, station 87187003, méthode OMM.
 
 Inspiré de docs/maquette.png."""
 
@@ -234,38 +258,51 @@ def serie_p_etp_annuelle(jours_annee: list[dict]) -> list[float | None]:
 
 
 def construire_bilan_hydrique(quotidien: list[dict], historique: list[dict], annee_courante: int) -> dict:
-    # Année en cours, jusqu'au dernier jour disponible
-    jours_courants = [j for j in quotidien if j["date"].year == annee_courante]
-    jours_courants.sort(key=lambda x: x["date"])
-    serie_courante = serie_p_etp_annuelle(jours_courants)
+    jours_courants = sorted(
+        [j for j in quotidien if j["date"].year == annee_courante],
+        key=lambda x: x["date"],
+    )
     labels = [j["date"].strftime("%d/%m") for j in jours_courants]
 
-    # Référence : moyenne par jour-de-l'année sur 1995-2024
+    # Cumuls journaliers de l'année en cours (P, ETP, P-ETP)
+    rr_cumul, etp_cumul, p_etp_courant = [], [], []
+    c_rr = c_etp = 0.0
+    for j in jours_courants:
+        c_rr += j["RR"] if j["RR"] is not None else 0.0
+        if j["TN"] is not None and j["TX"] is not None:
+            c_etp += etp_hargreaves(j["TN"], j["TX"], j["date"].timetuple().tm_yday)
+        rr_cumul.append(round(c_rr, 1))
+        etp_cumul.append(round(c_etp, 1))
+        p_etp_courant.append(round(c_rr - c_etp, 1))
+
+    # Référence 1995-2024 : moyenne du bilan P-ETP par jour-de-l'année
     par_doy: dict[int, list[float]] = {}
     for an in range(ANNEE_REF_DEBUT, ANNEE_REF_FIN + 1):
         jours_an = [j for j in historique if j["date"].year == an]
         if not jours_an:
             continue
-        cumul = 0.0
+        c = 0.0
         for j in sorted(jours_an, key=lambda x: x["date"]):
             if j["TN"] is None or j["TX"] is None:
                 continue
             p = j["RR"] if j["RR"] is not None else 0.0
-            etp = etp_hargreaves(j["TN"], j["TX"], j["date"].timetuple().tm_yday)
-            cumul += p - etp
-            doy = j["date"].timetuple().tm_yday
-            par_doy.setdefault(doy, []).append(cumul)
+            c += p - etp_hargreaves(j["TN"], j["TX"], j["date"].timetuple().tm_yday)
+            par_doy.setdefault(j["date"].timetuple().tm_yday, []).append(c)
 
-    serie_ref = []
+    p_etp_reference = []
     for j in jours_courants:
-        doy = j["date"].timetuple().tm_yday
-        valeurs = par_doy.get(doy, [])
-        serie_ref.append(round(sum(valeurs) / len(valeurs), 1) if valeurs else None)
+        valeurs = par_doy.get(j["date"].timetuple().tm_yday, [])
+        p_etp_reference.append(round(sum(valeurs) / len(valeurs), 1) if valeurs else None)
+
+    bilan_actuel = next((v for v in reversed(p_etp_courant) if v is not None), 0.0)
 
     return {
         "labels": labels,
-        "p_etp_courant": serie_courante,
-        "p_etp_reference": serie_ref,
+        "rr_cumul": rr_cumul,
+        "etp_cumul": etp_cumul,
+        "p_etp_courant": p_etp_courant,
+        "p_etp_reference": p_etp_reference,
+        "bilan_actuel": bilan_actuel,
         "annee": annee_courante,
     }
 
@@ -389,6 +426,108 @@ def rendre_heatmap_html(heatmap: dict) -> str:
         </div>
       </div>
     </div>"""
+
+
+# ── Phénologie — degrés-jours de croissance ───────────────────────────────────
+
+BASES_GDD = [0, 6, 10]
+SEUILS_PHENO = [
+    {"base": 0,  "valeur": 200,  "libelle": "Démarrage pousse de l'herbe",
+     "detail": "200 DJC base 0 °C — INRAE / ARVALIS"},
+    {"base": 6,  "valeur": 1000, "libelle": "Épiaison blé tendre",
+     "detail": "1 000 DJC base 6 °C — ARVALIS 2022"},
+    {"base": 10, "valeur": 1700, "libelle": "Floraison maïs grain",
+     "detail": "1 700 DJC base 10 °C — ARVALIS / INRAE"},
+]
+
+
+def _gdd_annee(jours: list[dict], base: float) -> list[float]:
+    cumul, serie = 0.0, []
+    for j in sorted(jours, key=lambda x: x["date"]):
+        if j["TN"] is not None and j["TX"] is not None:
+            cumul += max(0.0, (j["TN"] + j["TX"]) / 2 - base)
+        serie.append(round(cumul, 1))
+    return serie
+
+
+def construire_phenologie(quotidien: list[dict], historique: list[dict], annee: int) -> dict:
+    jours_an = sorted([j for j in quotidien if j["date"].year == annee], key=lambda j: j["date"])
+    labels = [j["date"].strftime("%d/%m") for j in jours_an]
+
+    # GDD cumulés année en cours
+    gdd = {b: _gdd_annee(jours_an, b) for b in BASES_GDD}
+
+    # Référence P50 par DOY sur 1995-2024
+    gdd_doy: dict[int, dict[int, list[float]]] = {b: {} for b in BASES_GDD}
+    for an_h in range(ANNEE_REF_DEBUT, ANNEE_REF_FIN + 1):
+        jh = sorted([j for j in historique if j["date"].year == an_h], key=lambda j: j["date"])
+        if not jh:
+            continue
+        c = {b: 0.0 for b in BASES_GDD}
+        for j in jh:
+            if j["TN"] is not None and j["TX"] is not None:
+                for b in BASES_GDD:
+                    c[b] += max(0.0, (j["TN"] + j["TX"]) / 2 - b)
+            doy = j["date"].timetuple().tm_yday
+            for b in BASES_GDD:
+                gdd_doy[b].setdefault(doy, []).append(c[b])
+
+    gdd_ref: dict[int, list[float | None]] = {}
+    for b in BASES_GDD:
+        serie = []
+        for j in jours_an:
+            vals = sorted(gdd_doy[b].get(j["date"].timetuple().tm_yday, []))
+            serie.append(round(vals[len(vals) // 2], 1) if vals else None)
+        gdd_ref[b] = serie
+
+    # Seuils : date de franchissement et médiane historique
+    seuils = []
+    for s in SEUILS_PHENO:
+        b, seuil = s["base"], s["valeur"]
+        # Date de franchissement cette année
+        date_an = None
+        for i, val in enumerate(gdd[b]):
+            if val >= seuil:
+                date_an = jours_an[i]["date"].strftime("%d/%m")
+                break
+        gdd_actuel = gdd[b][-1] if gdd[b] else 0.0
+
+        # Médiane historique (DOY → date)
+        doys_hist = []
+        for an_h in range(ANNEE_REF_DEBUT, ANNEE_REF_FIN + 1):
+            jh = sorted([j for j in historique if j["date"].year == an_h], key=lambda j: j["date"])
+            c_h = 0.0
+            for j in jh:
+                if j["TN"] is not None and j["TX"] is not None:
+                    c_h += max(0.0, (j["TN"] + j["TX"]) / 2 - b)
+                    if c_h >= seuil:
+                        doys_hist.append(j["date"].timetuple().tm_yday)
+                        break
+        ref_med = "—"
+        if doys_hist:
+            doys_hist.sort()
+            p50_doy = doys_hist[len(doys_hist) // 2]
+            try:
+                ref_d = date(annee, 1, 1) + timedelta(days=p50_doy - 1)
+                ref_med = ref_d.strftime("%d/%m")
+            except ValueError:
+                ref_med = "—"
+
+        seuils.append({
+            **s,
+            "date_an": date_an,
+            "gdd_actuel": round(gdd_actuel, 0),
+            "pct": min(100, int(gdd_actuel / seuil * 100)),
+            "ref_med": ref_med,
+        })
+
+    return {
+        "labels": labels,
+        "gdd":     {str(b): gdd[b]     for b in BASES_GDD},
+        "gdd_ref": {str(b): gdd_ref[b] for b in BASES_GDD},
+        "seuils": seuils,
+        "annee": annee,
+    }
 
 
 # ── Records historiques ───────────────────────────────────────────────────────
@@ -635,10 +774,12 @@ def main() -> int:
         "climogramme": construire_climogramme(quotidien, normales, annee),
         "detail_mois": construire_detail_mois(jours_mois),
         "bilan": construire_bilan_hydrique(quotidien, historique, annee),
+        "pheno": construire_phenologie(quotidien, historique, annee),
         "heatmap": construire_heatmap(quotidien + historique, derniere_date),
         "records": construire_records(quotidien, historique),
     }
-    print(f"  bilan hydrique  : {len([x for x in ctx['bilan']['p_etp_courant'] if x is not None])} jours en {annee}")
+    print(f"  bilan hydrique  : bilan actuel {ctx['bilan']['bilan_actuel']:+.0f} mm")
+    print(f"  phénologie      : {len(jours_an := [j for j in quotidien if j['date'].year == annee])} jours")
     print(f"  heatmap         : {ctx['heatmap']['periode']}")
 
     SORTIE.parent.mkdir(parents=True, exist_ok=True)
@@ -658,10 +799,45 @@ def rendre_html(ctx: dict) -> str:
     heatmap_html = rendre_heatmap_html(ctx["heatmap"])
     records_html = rendre_records_html(ctx["records"])
 
+    # Bilan hydrique — indicateur KPI
+    bv = ctx["bilan"]["bilan_actuel"]
+    bilan_col  = "#56b85e" if bv >= 0 else "#e8995c"
+    bilan_signe = "+" if bv >= 0 else ""
+    bilan_mot  = "Excédent" if bv >= 0 else "Déficit"
+
+    # Phénologie — tableau des seuils
+    _seuil_rows = []
+    for s in ctx["pheno"]["seuils"]:
+        bar_col = "#56b85e" if s["date_an"] else "#f39c12"
+        avance = ""
+        if s["date_an"] and s["ref_med"] and s["ref_med"] != "—":
+            # Comparer en jour-de-l'année
+            try:
+                d_an  = datetime.strptime(f"{s['date_an']}/{ctx['annee']}", "%d/%m/%Y").date()
+                d_ref = datetime.strptime(f"{s['ref_med']}/{ctx['annee']}", "%d/%m/%Y").date()
+                delta = (d_an - d_ref).days
+                if delta != 0:
+                    avance = f" <span style='color:{'#56b85e' if delta < 0 else '#e8995c'};font-size:11px'>" \
+                             f"({'−' if delta < 0 else '+'}{abs(delta)} j)</span>"
+            except ValueError:
+                pass
+        _seuil_rows.append(
+            f'<tr>'
+            f'<td>{s["libelle"]}<br>'
+            f'<small style="color:var(--texte-doux)">{s["detail"]}</small></td>'
+            f'<td class="rn">{s["gdd_actuel"]:.0f} °Cj'
+            f'<div class="pheno-bar"><div style="width:{s["pct"]}%;background:{bar_col}"></div></div></td>'
+            f'<td class="rn">{"✓ " + s["date_an"] if s["date_an"] else "en cours"}{avance}</td>'
+            f'<td class="rn">{s["ref_med"]}</td>'
+            f'</tr>'
+        )
+    pheno_seuils_html = "".join(_seuil_rows)
+
     data_json = json.dumps({
         "climogramme": ctx["climogramme"],
         "detail_mois": ctx["detail_mois"],
         "bilan": ctx["bilan"],
+        "pheno": ctx["pheno"],
     }, ensure_ascii=False)
 
     return f"""<!DOCTYPE html>
@@ -741,6 +917,32 @@ def rendre_html(ctx: dict) -> str:
   .hm-grad {{ flex: 0 0 120px; height: 8px; border-radius: 2px;
               background: linear-gradient(to right, #1f4068, #3a73a8, #9aa3ad, #e8995c, #c0392b); }}
 
+  /* ── Bilan hydrique KPI ── */
+  .bilan-kpi {{ display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+               background: var(--bg-carte); border: 1px solid var(--bord);
+               border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; }}
+  .bilan-kpi-val {{ font-size: 28px; font-weight: 700; }}
+  .bilan-kpi-label {{ font-size: 13px; color: var(--texte-doux); }}
+  .bilan-kpi-desc {{ font-size: 12px; color: var(--texte-doux); }}
+  .leg-rr::before   {{ color: rgba(78,161,255,0.7); }}
+  .leg-etp::before  {{ color: #e8995c; }}
+  .leg-exc::before  {{ color: #56b85e; }}
+  .leg-def::before  {{ color: #e8995c; }}
+  /* ── Phénologie ── */
+  .pheno-table-wrap {{ overflow-x: auto; margin-top: 16px; }}
+  .pheno-table {{ width: 100%; border-collapse: collapse; font-size: 13px; min-width: 480px; }}
+  .pheno-table thead th {{ text-align: left; padding: 8px 10px; background: var(--bg-carte);
+                            color: var(--texte-doux); font-weight: 600; font-size: 11px;
+                            text-transform: uppercase; letter-spacing: 0.5px; }}
+  .pheno-table tbody td {{ padding: 8px 10px; border-top: 1px solid var(--bord);
+                            vertical-align: middle; }}
+  .pheno-table tbody tr:hover {{ background: rgba(255,255,255,0.03); }}
+  .pheno-bar {{ height: 4px; background: var(--bord); border-radius: 2px;
+               margin-top: 4px; width: 80px; display: inline-block; }}
+  .pheno-bar div {{ height: 4px; border-radius: 2px; }}
+  .leg-b0::before  {{ color: #56b85e; }}
+  .leg-b6::before  {{ color: #f39c12; }}
+  .leg-b10::before {{ color: #e74c3c; }}
   /* ── Records ── */
   .rec-tuiles {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }}
   .rec-tuile {{ background: var(--bg-carte); border: 1px solid var(--bord);
@@ -813,6 +1015,7 @@ def rendre_html(ctx: dict) -> str:
 <div class="tabs" role="tablist">
   <button class="tab-btn actif" data-cible="mois">Mois en cours</button>
   <button class="tab-btn"       data-cible="bilan">Bilan hydrique</button>
+  <button class="tab-btn"       data-cible="pheno">Phénologie</button>
   <button class="tab-btn"       data-cible="heatmap">Heatmap T° max</button>
   <button class="tab-btn"       data-cible="records">Records</button>
 </div>
@@ -836,16 +1039,47 @@ def rendre_html(ctx: dict) -> str:
 </div>
 
 <div id="bilan" class="panneau">
-  <h2>Bilan hydrique {ctx['annee']} — P − ETP cumulée depuis le 1er janvier</h2>
-  <div class="legende">
-    <span class="leg-bilan">{ctx['annee']} (mm)</span>
-    <span class="leg-norm">Référence 1995-2024 (mm)</span>
+  <h2>Bilan hydrique {ctx['annee']} — depuis le 1ᵉʳ janvier</h2>
+  <div class="bilan-kpi">
+    <span class="bilan-kpi-label">{bilan_mot} hydrique cumulé au {ctx['bilan']['labels'][-1] if ctx['bilan']['labels'] else '—'}</span>
+    <span class="bilan-kpi-val" style="color:{bilan_col}">{bilan_signe}{bv:.0f} mm</span>
+    <span class="bilan-kpi-desc">P − ETP depuis le 1ᵉʳ jan. · référence 1995-2024 : {ctx['bilan']['p_etp_reference'][-1]:.0f} mm</span>
   </div>
-  <canvas id="bilan_chart"></canvas>
+  <div class="legende">
+    <span class="leg-rr">Pluie cumulée (mm)</span>
+    <span class="leg-etp">ETP cumulée (mm)</span>
+    <span class="leg-exc">Bilan P−ETP {ctx['annee']}</span>
+    <span class="leg-norm">Bilan moyen 1995-2024</span>
+  </div>
+  <canvas id="bilan_chart" style="max-height:380px"></canvas>
   <p style="font-size:12px;color:var(--texte-doux);margin-top:8px">
-    ETP calculée par la formule de Hargreaves-Samani (latitude {LATITUDE_DEG:.3f}°,
-    rayonnement extra-terrestre FAO-56). Une valeur positive indique un excédent
-    hydrique cumulé, négative un déficit.
+    ETP Hargreaves-Samani (latitude {LATITUDE_DEG:.3f}°, Ra FAO-56).
+    Zone verte = excédent hydrique · zone orange = déficit hydrique.
+  </p>
+</div>
+
+<div id="pheno" class="panneau">
+  <h2>Phénologie {ctx['annee']} — degrés-jours de croissance depuis le 1ᵉʳ janvier</h2>
+  <div class="legende">
+    <span class="leg-b0">Base 0 °C — herbe (trait plein · pointillés = méd. 1995-2024)</span>
+    <span class="leg-b6">Base 6 °C — céréales</span>
+    <span class="leg-b10">Base 10 °C — maïs</span>
+  </div>
+  <canvas id="pheno_chart" style="max-height:340px"></canvas>
+  <div class="pheno-table-wrap">
+    <table class="pheno-table">
+      <thead><tr>
+        <th>Seuil phénologique</th>
+        <th>DJC actuel</th>
+        <th>{ctx['annee']}</th>
+        <th>Médiane 1995-2024</th>
+      </tr></thead>
+      <tbody>{pheno_seuils_html}</tbody>
+    </table>
+  </div>
+  <p style="font-size:12px;color:var(--texte-doux);margin-top:10px">
+    DJC = Σ max(0, (TN+TX)/2 − Tbase) depuis le 1ᵉʳ jan. ·
+    Seuils : ARVALIS / INRAE · Médiane calculée sur 1995-2024 (station 87187003).
   </p>
 </div>
 
@@ -910,18 +1144,25 @@ new Chart(document.getElementById('climo'), {{
 }});
 
 new Chart(document.getElementById('bilan_chart'), {{
-  type: 'line',
   data: {{
     labels: DATA.bilan.labels,
     datasets: [
-      {{ label: 'P − ETP ' + DATA.bilan.annee,
+      {{ type: 'bar',  label: 'Pluie cumulée',
+         data: DATA.bilan.rr_cumul,
+         backgroundColor: 'rgba(78,161,255,0.35)', yAxisID: 'y', order: 4 }},
+      {{ type: 'line', label: 'ETP cumulée',
+         data: DATA.bilan.etp_cumul,
+         borderColor: '#e8995c', borderWidth: 1.5, pointRadius: 0,
+         tension: 0.2, yAxisID: 'y', order: 3, spanGaps: true }},
+      {{ type: 'line', label: 'P − ETP ' + DATA.bilan.annee,
          data: DATA.bilan.p_etp_courant,
-         borderColor: '#56b85e', backgroundColor: 'rgba(86,184,94,0.12)',
-         fill: true, tension: 0.2, pointRadius: 0, spanGaps: true, borderWidth: 2 }},
-      {{ label: 'Référence 1995-2024',
+         borderColor: '#56b85e', borderWidth: 2.5,
+         fill: {{ target: 'origin', above: 'rgba(86,184,94,0.28)', below: 'rgba(232,153,92,0.28)' }},
+         tension: 0.2, pointRadius: 0, yAxisID: 'y1', order: 1, spanGaps: true }},
+      {{ type: 'line', label: 'Bilan moyen 1995-2024',
          data: DATA.bilan.p_etp_reference,
-         borderColor: '#9aa3ad', borderDash: [5,5],
-         fill: false, tension: 0.2, pointRadius: 0, spanGaps: true, borderWidth: 1.5 }},
+         borderColor: '#9aa3ad', borderDash: [5,5], borderWidth: 1.5,
+         fill: false, tension: 0.2, pointRadius: 0, yAxisID: 'y1', order: 2, spanGaps: true }},
     ],
   }},
   options: {{
@@ -929,8 +1170,47 @@ new Chart(document.getElementById('bilan_chart'), {{
     plugins: {{ legend: {{ display: false }} }},
     scales: {{
       x: {{ ticks: {{ maxTicksLimit: 12, autoSkip: true }} }},
-      y: {{ title: {{ display: true, text: 'mm' }},
-            grid: {{ color: ctx => ctx.tick.value === 0 ? '#56b85e55' : '#2c333d' }} }},
+      y:  {{ position: 'left',  title: {{ display: true, text: 'mm cumulés' }}, min: 0 }},
+      y1: {{ position: 'right', title: {{ display: true, text: 'P−ETP (mm)' }},
+             grid: {{ color: c => c.tick.value === 0 ? '#56b85e66' : '#2c333d' }} }},
+    }},
+  }}
+}});
+
+new Chart(document.getElementById('pheno_chart'), {{
+  type: 'line',
+  data: {{
+    labels: DATA.pheno.labels,
+    datasets: [
+      // ── Courbes année en cours ──────────────────────────────────────────
+      {{ label: 'Base 0 °C',  data: DATA.pheno.gdd['0'],
+         borderColor: '#56b85e', borderWidth: 2.5, pointRadius: 0, tension: 0.2, spanGaps: true }},
+      {{ label: 'Base 6 °C',  data: DATA.pheno.gdd['6'],
+         borderColor: '#f39c12', borderWidth: 2.5, pointRadius: 0, tension: 0.2, spanGaps: true }},
+      {{ label: 'Base 10 °C', data: DATA.pheno.gdd['10'],
+         borderColor: '#e74c3c', borderWidth: 2.5, pointRadius: 0, tension: 0.2, spanGaps: true }},
+      // ── Références historiques P50 ───────────────────────────────────────
+      {{ label: 'Réf. base 0 °C',  data: DATA.pheno.gdd_ref['0'],
+         borderColor: '#56b85e', borderDash: [4,4], borderWidth: 1.2, pointRadius: 0, tension: 0.2, spanGaps: true }},
+      {{ label: 'Réf. base 6 °C',  data: DATA.pheno.gdd_ref['6'],
+         borderColor: '#f39c12', borderDash: [4,4], borderWidth: 1.2, pointRadius: 0, tension: 0.2, spanGaps: true }},
+      {{ label: 'Réf. base 10 °C', data: DATA.pheno.gdd_ref['10'],
+         borderColor: '#e74c3c', borderDash: [4,4], borderWidth: 1.2, pointRadius: 0, tension: 0.2, spanGaps: true }},
+      // ── Lignes de seuils ────────────────────────────────────────────────
+      {{ label: '200 DJC (herbe)',  data: Array(DATA.pheno.labels.length).fill(200),
+         borderColor: 'rgba(86,184,94,0.45)',  borderDash: [2,5], borderWidth: 1, pointRadius: 0 }},
+      {{ label: '1000 DJC (blé)',   data: Array(DATA.pheno.labels.length).fill(1000),
+         borderColor: 'rgba(243,156,18,0.45)', borderDash: [2,5], borderWidth: 1, pointRadius: 0 }},
+      {{ label: '1700 DJC (maïs)',  data: Array(DATA.pheno.labels.length).fill(1700),
+         borderColor: 'rgba(231,76,60,0.45)',  borderDash: [2,5], borderWidth: 1, pointRadius: 0 }},
+    ],
+  }},
+  options: {{
+    responsive: true, maintainAspectRatio: false,
+    plugins: {{ legend: {{ display: false }} }},
+    scales: {{
+      x: {{ ticks: {{ maxTicksLimit: 12, autoSkip: true }} }},
+      y: {{ title: {{ display: true, text: '°C·j cumulés' }}, min: 0 }},
     }},
   }}
 }});
