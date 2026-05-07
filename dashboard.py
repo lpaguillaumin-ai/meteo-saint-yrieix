@@ -1108,7 +1108,7 @@ def rendre_html(ctx: dict) -> str:
 <style>
   :root {{
     --bg: #1a1f26; --bg-carte: #232a33; --bg-section: #1f252d;
-    --texte: #e6e9ec; --texte-doux: #9aa3ad;
+    --texte: #e6e9ec; --texte-doux: #aab3bc;
     --accent-pluie: #4ea1ff; --accent-tx: #e74c3c; --accent-tn: #5dade2;
     --bord: #2c333d; --hausse: #f39c12; --baisse: #56b85e;
   }}
@@ -1135,11 +1135,15 @@ def rendre_html(ctx: dict) -> str:
   .tendance-up::before  {{ content: "↗ "; color: var(--hausse); }}
   .tendance-down::before {{ content: "↘ "; color: var(--baisse); }}
   /* Onglets */
-  .tabs {{ display: flex; gap: 4px; margin-bottom: 0; flex-wrap: wrap; }}
+  .tabs {{ display: flex; gap: 4px; margin-bottom: 0;
+           overflow-x: auto; -webkit-overflow-scrolling: touch;
+           scrollbar-width: none; }}
+  .tabs::-webkit-scrollbar {{ display: none; }}
   .tab-btn {{ background: var(--bg-carte); color: var(--texte-doux);
               border: 1px solid var(--bord); border-bottom: none;
               padding: 8px 14px; border-radius: 6px 6px 0 0;
-              cursor: pointer; font-size: 13px; font-family: inherit; }}
+              cursor: pointer; font-size: 13px; font-family: inherit;
+              white-space: nowrap; flex-shrink: 0; }}
   .tab-btn.actif {{ background: var(--bg-section); color: var(--texte); }}
   .panneau {{ background: var(--bg-section); border: 1px solid var(--bord);
               border-radius: 0 6px 6px 6px; padding: 16px; }}
@@ -1153,7 +1157,7 @@ def rendre_html(ctx: dict) -> str:
   .leg-pluie::before {{ color: var(--accent-pluie); }}
   .leg-tx::before    {{ color: var(--accent-tx); }}
   .leg-tn::before    {{ color: var(--accent-tn); }}
-  .leg-norm::before  {{ color: #555e6b; }}
+  .leg-norm::before  {{ color: #778291; }}
   .leg-bilan::before {{ color: #56b85e; }}
   canvas {{ max-height: 360px; }}
   /* Heatmap */
@@ -1242,6 +1246,16 @@ def rendre_html(ctx: dict) -> str:
   .rec-battu td:first-child {{ font-weight: 600; }}
   .rec-note {{ font-size: 12px; color: var(--texte-doux); margin-top: 12px;
                line-height: 1.5; border-top: 1px solid var(--bord); padding-top: 10px; }}
+  /* ── Bouton export ── */
+  .btn-export {{ background: transparent; color: var(--texte-doux);
+                 border: 1px solid var(--bord); border-radius: 4px;
+                 padding: 6px 12px; font-size: 12px; font-family: inherit;
+                 cursor: pointer; transition: border-color .15s, color .15s; }}
+  .btn-export:hover {{ border-color: var(--accent-pluie); color: var(--texte); }}
+  /* ── Footer ── */
+  footer {{ margin-top: 32px; padding: 14px 0;
+            border-top: 1px solid var(--bord);
+            font-size: 12px; color: var(--texte-doux); text-align: center; }}
   /* ── Mobile ── */
   @media (max-width: 720px) {{
     .kpis {{ grid-template-columns: repeat(2, 1fr); }}
@@ -1260,7 +1274,7 @@ def rendre_html(ctx: dict) -> str:
     .kpi-titre {{ font-size: 11px; }}
     .kpi-valeur {{ font-size: 18px; }}
     .kpi-cmp {{ font-size: 11px; }}
-    .tab-btn {{ padding: 6px 10px; font-size: 12px; flex: 1 1 auto; text-align: center; }}
+    .tab-btn {{ padding: 6px 10px; font-size: 12px; }}
     .panneau {{ padding: 12px; border-radius: 0 0 6px 6px; }}
     .panneau h2 {{ font-size: 12px; }}
     .legende {{ font-size: 11px; gap: 8px; }}
@@ -1285,23 +1299,23 @@ def rendre_html(ctx: dict) -> str:
 <div class="kpis">{cartes}
 </div>
 
-<div class="tabs" role="tablist">
-  <button class="tab-btn actif" data-cible="mois">Mois en cours</button>
-  <button class="tab-btn"       data-cible="bilan">Bilan hydrique</button>
-  <button class="tab-btn"       data-cible="pheno">Phénologie</button>
-  <button class="tab-btn"       data-cible="gel">Gel et chaleur</button>
-  <button class="tab-btn"       data-cible="heatmap">Heatmap T° max</button>
-  <button class="tab-btn"       data-cible="records">Records</button>
+<div class="tabs" role="tablist" aria-label="Onglets du tableau de bord">
+  <button class="tab-btn actif" id="btn-mois"    role="tab" aria-selected="true"  aria-controls="mois"    data-cible="mois">Mois en cours</button>
+  <button class="tab-btn"       id="btn-bilan"   role="tab" aria-selected="false" aria-controls="bilan"   data-cible="bilan">Bilan hydrique</button>
+  <button class="tab-btn"       id="btn-pheno"   role="tab" aria-selected="false" aria-controls="pheno"   data-cible="pheno">Phénologie</button>
+  <button class="tab-btn"       id="btn-gel"     role="tab" aria-selected="false" aria-controls="gel"     data-cible="gel">Gel et chaleur</button>
+  <button class="tab-btn"       id="btn-heatmap" role="tab" aria-selected="false" aria-controls="heatmap" data-cible="heatmap">Heatmap T° max</button>
+  <button class="tab-btn"       id="btn-records" role="tab" aria-selected="false" aria-controls="records" data-cible="records">Records</button>
 </div>
 
-<div id="mois" class="panneau actif">
+<div id="mois" class="panneau actif" role="tabpanel" aria-labelledby="btn-mois" tabindex="0">
   <h2>Détail jour par jour — {ctx['mois_titre']}</h2>
   <div class="legende">
     <span class="leg-pluie">Précipitations (mm)</span>
     <span class="leg-tx">T° max (°C)</span>
     <span class="leg-tn">T° min (°C)</span>
   </div>
-  <canvas id="detail"></canvas>
+  <canvas id="detail" role="img" aria-label="Graphique : précipitations journalières, températures max et min — {ctx['mois_titre']}"></canvas>
 
   <h2>Climogramme {ctx['annee']} — pluie et température</h2>
   <div class="legende">
@@ -1309,10 +1323,14 @@ def rendre_html(ctx: dict) -> str:
     <span class="leg-norm">Normale 1995-2024 (mm)</span>
     <span class="leg-tx">T° moyenne (°C)</span>
   </div>
-  <canvas id="climo"></canvas>
+  <canvas id="climo" role="img" aria-label="Climogramme {ctx['annee']} : cumul mensuel pluie et température moyenne vs normales 1995-2024"></canvas>
+
+  <div style="display:flex;justify-content:flex-end;margin-top:14px">
+    <button class="btn-export" onclick="exporterCSV()">⬇ Exporter les données du mois en CSV</button>
+  </div>
 </div>
 
-<div id="bilan" class="panneau">
+<div id="bilan" class="panneau" role="tabpanel" aria-labelledby="btn-bilan" tabindex="0">
   <h2>Bilan hydrique {ctx['annee']} — depuis le 1ᵉʳ janvier</h2>
   <div class="bilan-kpi">
     <span class="bilan-kpi-label">{bilan_mot} hydrique cumulé au {ctx['bilan']['labels'][-1] if ctx['bilan']['labels'] else '—'}</span>
@@ -1325,21 +1343,21 @@ def rendre_html(ctx: dict) -> str:
     <span class="leg-exc">Bilan P−ETP {ctx['annee']}</span>
     <span class="leg-norm">Bilan moyen 1995-2024</span>
   </div>
-  <canvas id="bilan_chart" style="max-height:380px"></canvas>
+  <canvas id="bilan_chart" style="max-height:380px" role="img" aria-label="Bilan hydrique {ctx['annee']} : pluie cumulée, ETP cumulée et bilan P-ETP vs référence 1995-2024"></canvas>
   <p style="font-size:12px;color:var(--texte-doux);margin-top:8px">
     ETP Hargreaves-Samani (latitude {LATITUDE_DEG:.3f}°, Ra FAO-56).
     Zone verte = excédent hydrique · zone orange = déficit hydrique.
   </p>
 </div>
 
-<div id="pheno" class="panneau">
+<div id="pheno" class="panneau" role="tabpanel" aria-labelledby="btn-pheno" tabindex="0">
   <h2>Phénologie {ctx['annee']} — degrés-jours de croissance depuis le 1ᵉʳ janvier</h2>
   <div class="legende">
     <span class="leg-b0">Base 0 °C — herbe (trait plein · pointillés = méd. 1995-2024)</span>
     <span class="leg-b6">Base 6 °C — céréales</span>
     <span class="leg-b10">Base 10 °C — maïs</span>
   </div>
-  <canvas id="pheno_chart" style="max-height:340px"></canvas>
+  <canvas id="pheno_chart" style="max-height:340px" role="img" aria-label="Phénologie {ctx['annee']} : degrés-jours cumulés base 0/6/10 °C et médianes historiques 1995-2024"></canvas>
   <div class="pheno-table-wrap">
     <table class="pheno-table">
       <thead><tr>
@@ -1357,7 +1375,7 @@ def rendre_html(ctx: dict) -> str:
   </p>
 </div>
 
-<div id="gel" class="panneau">
+<div id="gel" class="panneau" role="tabpanel" aria-labelledby="btn-gel" tabindex="0">
   <h2>Gelées {ctx['annee']} — calendrier annuel (Tn journalière)</h2>
   {gc_html}
 
@@ -1370,7 +1388,7 @@ def rendre_html(ctx: dict) -> str:
     <span class="leg-ith-sv">Stress sévère (78-84)</span>
     <span class="leg-ith-dg">Danger (≥ 84)</span>
   </div>
-  <canvas id="ith_chart" style="max-height:340px"></canvas>
+  <canvas id="ith_chart" style="max-height:340px" role="img" aria-label="Stress thermique bovin ITH {ctx['annee']} : jours par classe de confort et stress, par mois"></canvas>
   <p style="font-size:12px;color:var(--texte-doux);margin-top:8px">
     ITH = (1,8·TX + 32) − (0,55 − 0,0055·HRmoy) × (1,8·TX − 26) ·
     HRmoy = (UN + UX) / 2 · Seuils et formule : INRAE,
@@ -1379,15 +1397,19 @@ def rendre_html(ctx: dict) -> str:
   </p>
 </div>
 
-<div id="heatmap" class="panneau">
+<div id="heatmap" class="panneau" role="tabpanel" aria-labelledby="btn-heatmap" tabindex="0">
   <h2>T° max — 12 mois glissants ({ctx['heatmap']['periode']})</h2>
   {heatmap_html}
 </div>
 
-<div id="records" class="panneau">
+<div id="records" class="panneau" role="tabpanel" aria-labelledby="btn-records" tabindex="0">
   <h2>Records historiques — {ctx['records']['periode']}</h2>
   {records_html}
 </div>
+
+<footer>
+  Données : Météo-France, station Saint-Yrieix-la-Perche (87187003) — Mise à jour : {ctx['edition']}
+</footer>
 
 <script>
 const DATA = {data_json};
@@ -1545,14 +1567,43 @@ new Chart(document.getElementById('pheno_chart'), {{
 }});
 
 // Onglets
+function _activerOnglet(btn) {{
+  document.querySelectorAll('.tab-btn').forEach(b => {{
+    b.classList.remove('actif');
+    b.setAttribute('aria-selected', 'false');
+  }});
+  document.querySelectorAll('.panneau').forEach(p => p.classList.remove('actif'));
+  btn.classList.add('actif');
+  btn.setAttribute('aria-selected', 'true');
+  document.getElementById(btn.dataset.cible).classList.add('actif');
+}}
 document.querySelectorAll('.tab-btn').forEach(btn => {{
-  btn.addEventListener('click', () => {{
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('actif'));
-    document.querySelectorAll('.panneau').forEach(p => p.classList.remove('actif'));
-    btn.classList.add('actif');
-    document.getElementById(btn.dataset.cible).classList.add('actif');
+  btn.addEventListener('click', () => _activerOnglet(btn));
+  btn.addEventListener('keydown', e => {{
+    if (e.key === 'Enter' || e.key === ' ') {{ e.preventDefault(); _activerOnglet(btn); }}
   }});
 }});
+
+function exporterCSV() {{
+  const d = DATA.detail_mois;
+  const lignes = ['Date,Précipitations (mm),T° max (°C),T° min (°C)'];
+  d.labels.forEach((l, i) => {{
+    const rr = d.rr[i] != null ? d.rr[i] : '';
+    const tx = d.tx[i] != null ? d.tx[i] : '';
+    const tn = d.tn[i] != null ? d.tn[i] : '';
+    lignes.push(`${{l}},${{rr}},${{tx}},${{tn}}`);
+  }});
+  const blob = new Blob(['﻿' + lignes.join('\n')], {{type: 'text/csv;charset=utf-8;'}});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const mois = new Date().toISOString().slice(0, 7);
+  a.download = `meteo-st-yrieix-${{mois}}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}}
 </script>
 </body>
 </html>
