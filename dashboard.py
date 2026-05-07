@@ -428,6 +428,242 @@ def rendre_heatmap_html(heatmap: dict) -> str:
     </div>"""
 
 
+# ── Gel et stress thermique ───────────────────────────────────────────────────
+#
+# ITH (Indice Température-Humidité) bovin
+#   ITH = (1,8 × TX + 32) − (0,55 − 0,0055 × HRmoy) × (1,8 × TX − 26)
+#   TX en °C, HRmoy = (UN + UX) / 2 en % (0-100)
+#   Source : INRAE, recommandations stress thermique bovin (formule NRC adaptée)
+#
+# Seuils INRAE :
+#   < 68   : Confort
+#   68-72  : Alerte
+#   72-78  : Stress modéré
+#   78-84  : Stress sévère
+#   ≥ 84   : Danger
+
+ITH_CLASSES = [
+    (68,  "Confort",       "#2a6496"),
+    (72,  "Alerte",        "#d4ac0d"),
+    (78,  "Stress modéré", "#e8995c"),
+    (84,  "Stress sévère", "#c0392b"),
+    (999, "Danger",        "#7b241c"),
+]
+GEL_PALETTE = {
+    -1: "#2a313b",  # données manquantes
+     0: "#1e2830",  # hors gel
+     1: "#8ec8e8",  # gel léger   (−2 à 0 °C)
+     2: "#2980b9",  # gel modéré  (−5 à −2 °C)
+     3: "#1a3f6f",  # gel sévère  (< −5 °C)
+}
+
+
+def calculer_ith(tx: float, hr_moy: float) -> float:
+    """ITH journalier bovin (formule INRAE / NRC). TX en °C, HRmoy en %."""
+    return (1.8 * tx + 32) - (0.55 - 0.0055 * hr_moy) * (1.8 * tx - 26)
+
+
+def _classe_ith(v: float) -> int:
+    for i, (seuil, *_) in enumerate(ITH_CLASSES):
+        if v < seuil:
+            return i
+    return len(ITH_CLASSES) - 1
+
+
+def _cat_gel(tn: float | None) -> int:
+    if tn is None: return -1
+    if tn >= 0:    return 0
+    if tn >= -2:   return 1
+    if tn >= -5:   return 2
+    return 3
+
+
+def construire_gel_et_chaleur(quotidien: list[dict], historique: list[dict], annee: int) -> dict:
+    tout = sorted(historique + quotidien, key=lambda j: j["date"])
+    jours_an = [j for j in tout if j["date"].year == annee]
+    par_date_tn = {j["date"]: j["TN"] for j in tout}
+    derniere_dispo = max((j["date"] for j in jours_an), default=date(annee, 1, 1))
+
+    # ── Calendrier des gelées (grille semaines × jours) ──────────────────────
+    debut = date(annee, 1, 1)
+    fin   = date(annee, 12, 31)
+    debut_grille = debut - timedelta(days=debut.weekday())
+    fin_grille   = fin   + timedelta(days=(6 - fin.weekday()))
+    nb_jours_gr  = (fin_grille - debut_grille).days + 1
+
+    cellules_gel = []
+    for i in range(nb_jours_gr):
+        d = debut_grille + timedelta(days=i)
+        dans_an = debut <= d <= fin
+        tn = par_date_tn.get(d) if (dans_an and d <= derniere_dispo) else None
+        cellules_gel.append({
+            "date": d.isoformat(),
+            "tn":   tn,
+            "cat":  _cat_gel(tn) if dans_an else -2,
+            "sem":  i // 7,
+            "jour": d.weekday(),
+            "dans_an": dans_an,
+        })
+    nb_sem = (nb_jours_gr + 6) // 7
+    etiq_mois = []
+    vu = None
+    for s in range(nb_sem):
+        d = debut_grille + timedelta(days=s * 7)
+        if d.month != vu and debut <= d + timedelta(days=6):
+            etiq_mois.append({"s": s, "lab": MOIS_FR[d.month]})
+            vu = d.month
+
+    # ── Récapitulatif par année ───────────────────────────────────────────────
+    annees_recap = []
+    for an in range(ANNEE_REF_DEBUT, annee + 1):
+        jj = [j for j in tout if j["date"].year == an and j["TN"] is not None]
+        if not jj:
+            continue
+        nb_gel = sum(1 for j in jj if j["TN"] <= 0)
+        gels_pr = sorted(j["date"] for j in jj if j["TN"] <= 0 and j["date"].month <= 6)
+        gels_au = sorted(j["date"] for j in jj if j["TN"] <= 0 and j["date"].month >= 7)
+        d_pr = gels_pr[-1].strftime("%d/%m") if gels_pr else "—"
+        d_au = gels_au[0].strftime("%d/%m")  if gels_au else "—"
+        ssf = (gels_au[0] - gels_pr[-1]).days - 1 if (gels_pr and gels_au) else None
+        annees_recap.append({"an": an, "nb": nb_gel, "pr": d_pr, "au": d_au, "ssf": ssf})
+    annees_recap.sort(key=lambda r: r["an"], reverse=True)
+
+    # ── ITH mensuel (année en cours) ─────────────────────────────────────────
+    ith_par_mois: dict[int, list[int]] = {}
+    for m in range(1, 13):
+        counts = [0] * len(ITH_CLASSES)
+        for j in jours_an:
+            if j["date"].month == m and j["TX"] is not None and j["UN"] is not None and j["UX"] is not None:
+                ith = calculer_ith(j["TX"], (j["UN"] + j["UX"]) / 2)
+                counts[_classe_ith(ith)] += 1
+        ith_par_mois[m] = counts
+
+    # ── Référence ITH 1995-2024 — une seule passe sur historique ─────────────
+    ith_hist: dict[tuple, list[float]] = {}
+    for j in historique:
+        if j["TX"] is not None and j["UN"] is not None and j["UX"] is not None:
+            ith_hist.setdefault((j["date"].year, j["date"].month), []).append(
+                calculer_ith(j["TX"], (j["UN"] + j["UX"]) / 2)
+            )
+    ith_ref_par_mois: dict[int, list[float]] = {}
+    for m in range(1, 13):
+        acc = [[] for _ in ITH_CLASSES]
+        for an_h in range(ANNEE_REF_DEBUT, ANNEE_REF_FIN + 1):
+            vals = ith_hist.get((an_h, m), [])
+            if not vals:
+                continue
+            c = [0] * len(ITH_CLASSES)
+            for v in vals:
+                c[_classe_ith(v)] += 1
+            for i in range(len(ITH_CLASSES)):
+                acc[i].append(c[i])
+        ith_ref_par_mois[m] = [
+            round(sum(a) / len(a), 1) if a else 0.0 for a in acc
+        ]
+
+    # ── Texte d'alerte ───────────────────────────────────────────────────────
+    mois_courant = max((j["date"].month for j in jours_an), default=1)
+    mois_check   = mois_courant
+    if sum(1 for j in jours_an if j["date"].month == mois_courant) < 15 and mois_courant > 1:
+        mois_check = mois_courant - 1
+    nb_sev = sum(ith_par_mois.get(mois_check, [0]*5)[3:])
+    alerte_txt = None
+    if nb_sev > 5:
+        alerte_txt = (
+            f"⚠️ {nb_sev} jours de stress sévère ou danger (ITH ≥ 78) "
+            f"en {MOIS_FR_LONG[mois_check]} {annee}. "
+            f"Surveiller l'abreuvement et la ventilation des bâtiments."
+        )
+
+    return {
+        "annee": annee,
+        "cellules_gel": cellules_gel,
+        "nb_sem": nb_sem,
+        "etiq_mois": etiq_mois,
+        "annees_recap": annees_recap,
+        "ith_par_mois": {str(m): ith_par_mois[m] for m in range(1, 13)},
+        "ith_ref_par_mois": {str(m): ith_ref_par_mois[m] for m in range(1, 13)},
+        "alerte_txt": alerte_txt,
+        "labels_mois": [MOIS_FR[m] for m in range(1, 13)],
+    }
+
+
+def rendre_gel_chaleur_html(gc: dict) -> str:
+    annee = gc["annee"]
+
+    # ── Calendrier des gelées ─────────────────────────────────────────────────
+    cols: dict[int, list] = {}
+    for c in gc["cellules_gel"]:
+        cols.setdefault(c["sem"], []).append(c)
+
+    col_html = []
+    for s in range(gc["nb_sem"]):
+        cel = sorted(cols.get(s, []), key=lambda c: c["jour"])
+        parts = []
+        for c in cel:
+            if not c["dans_an"]:
+                parts.append('<div class="hm-cell hm-vide"></div>')
+                continue
+            col = GEL_PALETTE.get(c["cat"], GEL_PALETTE[-1])
+            d = datetime.fromisoformat(c["date"]).date()
+            tn_s = f"{c['tn']:.1f} °C" if c["tn"] is not None else "n/d"
+            cats = ["", " — Gel léger", " — Gel modéré", " — Gel sévère"]
+            tip = f"{d.strftime('%d/%m/%Y')} Tn = {tn_s}{cats[c['cat']] if c['cat'] > 0 else ''}"
+            parts.append(f'<div class="hm-cell" style="background:{col}" title="{tip}"></div>')
+        col_html.append(f'<div class="hm-col">{"".join(parts)}</div>')
+
+    etiq_html = "".join(
+        f'<div class="hm-mois" style="grid-column:{e["s"]+1}">{e["lab"]}</div>'
+        for e in gc["etiq_mois"]
+    )
+    nb_sem = gc["nb_sem"]
+
+    cal_section = f"""<div class="heatmap-wrapper">
+  <div class="heatmap-scroll">
+    <div class="hm-mois-row" style="grid-template-columns:repeat({nb_sem},14px)">{etiq_html}</div>
+    <div class="hm-grid">
+      <div class="hm-jours">
+        <span></span><span>mar</span><span></span><span>jeu</span><span></span><span>sam</span><span></span>
+      </div>
+      <div class="hm-cols">{"".join(col_html)}</div>
+    </div>
+    <div class="gel-legende">
+      <span class="gel-sw" style="background:#1e2830"></span>Hors gel
+      <span class="gel-sw" style="background:#8ec8e8"></span>Gel léger (−2 à 0 °C)
+      <span class="gel-sw" style="background:#2980b9"></span>Gel modéré (−5 à −2 °C)
+      <span class="gel-sw" style="background:#1a3f6f"></span>Gel sévère (&lt; −5 °C)
+    </div>
+  </div>
+</div>"""
+
+    # ── Tableau récapitulatif ─────────────────────────────────────────────────
+    rows = []
+    for r in gc["annees_recap"]:
+        bold = ' style="font-weight:700"' if r["an"] == annee else ""
+        ssf = f'{r["ssf"]} j' if r["ssf"] is not None else "—"
+        rows.append(
+            f'<tr><td{bold}>{r["an"]}</td>'
+            f'<td class="rn">{r["nb"]}</td>'
+            f'<td class="rn">{r["pr"]}</td>'
+            f'<td class="rn">{r["au"]}</td>'
+            f'<td class="rn">{ssf}</td></tr>'
+        )
+    recap_section = (
+        f'<h2 style="margin-top:24px">Récapitulatif par année (1995–{annee})</h2>'
+        f'<div class="rec-wrap"><table class="rec-table">'
+        f'<thead><tr>'
+        f'<th>Année</th><th>Jours de gel (TN ≤ 0 °C)</th>'
+        f'<th>Dernière gelée de printemps</th>'
+        f'<th>Première gelée d\'automne</th>'
+        f'<th>Saison sans gel</th>'
+        f'</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        f'</table></div>'
+    )
+
+    return cal_section + recap_section
+
+
 # ── Phénologie — degrés-jours de croissance ───────────────────────────────────
 
 BASES_GDD = [0, 6, 10]
@@ -774,11 +1010,14 @@ def main() -> int:
         "climogramme": construire_climogramme(quotidien, normales, annee),
         "detail_mois": construire_detail_mois(jours_mois),
         "bilan": construire_bilan_hydrique(quotidien, historique, annee),
+        "gc":    construire_gel_et_chaleur(quotidien, historique, annee),
         "pheno": construire_phenologie(quotidien, historique, annee),
         "heatmap": construire_heatmap(quotidien + historique, derniere_date),
         "records": construire_records(quotidien, historique),
     }
+    alerte_gc = ctx["gc"]["alerte_txt"]
     print(f"  bilan hydrique  : bilan actuel {ctx['bilan']['bilan_actuel']:+.0f} mm")
+    print(f"  gel et chaleur  : {'⚠ ALERTE ITH' if alerte_gc else 'RAS'}")
     print(f"  phénologie      : {len(jours_an := [j for j in quotidien if j['date'].year == annee])} jours")
     print(f"  heatmap         : {ctx['heatmap']['periode']}")
 
@@ -798,6 +1037,24 @@ def rendre_html(ctx: dict) -> str:
 
     heatmap_html = rendre_heatmap_html(ctx["heatmap"])
     records_html = rendre_records_html(ctx["records"])
+    gc_html      = rendre_gel_chaleur_html(ctx["gc"])
+
+    # Gel et chaleur — données JS pour le graphique ITH
+    _ith  = ctx["gc"]["ith_par_mois"]
+    _ref  = ctx["gc"]["ith_ref_par_mois"]
+    gc_alerte_html = (
+        f'<div class="ith-alerte">{ctx["gc"]["alerte_txt"]}</div>'
+        if ctx["gc"]["alerte_txt"] else ""
+    )
+    gc_js = {
+        "labels":  ctx["gc"]["labels_mois"],
+        "confort": [_ith[str(m)][0] for m in range(1, 13)],
+        "alerte":  [_ith[str(m)][1] for m in range(1, 13)],
+        "mod":     [_ith[str(m)][2] for m in range(1, 13)],
+        "sev":     [_ith[str(m)][3] for m in range(1, 13)],
+        "danger":  [_ith[str(m)][4] for m in range(1, 13)],
+        "ref_stress": [round(sum(_ref[str(m)][1:]), 1) for m in range(1, 13)],
+    }
 
     # Bilan hydrique — indicateur KPI
     bv = ctx["bilan"]["bilan_actuel"]
@@ -838,6 +1095,7 @@ def rendre_html(ctx: dict) -> str:
         "detail_mois": ctx["detail_mois"],
         "bilan": ctx["bilan"],
         "pheno": ctx["pheno"],
+        "gc": gc_js,
     }, ensure_ascii=False)
 
     return f"""<!DOCTYPE html>
@@ -917,6 +1175,19 @@ def rendre_html(ctx: dict) -> str:
   .hm-grad {{ flex: 0 0 120px; height: 8px; border-radius: 2px;
               background: linear-gradient(to right, #1f4068, #3a73a8, #9aa3ad, #e8995c, #c0392b); }}
 
+  /* ── Gel & chaleur ── */
+  .gel-legende {{ display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px;
+                 font-size: 12px; color: var(--texte-doux); align-items: center; }}
+  .gel-sw {{ display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+             margin-right: 4px; vertical-align: middle; flex-shrink: 0; }}
+  .ith-alerte {{ background: rgba(192,57,43,0.15); border: 1px solid rgba(192,57,43,0.5);
+                 border-radius: 6px; padding: 10px 14px; margin-bottom: 14px;
+                 font-size: 13px; color: #e74c3c; line-height: 1.5; }}
+  .leg-ith-ok::before  {{ color: #2a6496; }}
+  .leg-ith-al::before  {{ color: #d4ac0d; }}
+  .leg-ith-mo::before  {{ color: #e8995c; }}
+  .leg-ith-sv::before  {{ color: #c0392b; }}
+  .leg-ith-dg::before  {{ color: #7b241c; }}
   /* ── Bilan hydrique KPI ── */
   .bilan-kpi {{ display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
                background: var(--bg-carte); border: 1px solid var(--bord);
@@ -978,6 +1249,8 @@ def rendre_html(ctx: dict) -> str:
     .rec-tuiles {{ grid-template-columns: repeat(2, 1fr); }}
   }}
   @media (max-width: 480px) {{
+    .gel-legende {{ font-size: 11px; gap: 8px; }}
+    .ith-alerte  {{ font-size: 12px; padding: 8px 12px; }}
     body {{ padding: 12px; }}
     h1 {{ font-size: 18px; }}
     h1 small {{ font-size: 12px; }}
@@ -1016,6 +1289,7 @@ def rendre_html(ctx: dict) -> str:
   <button class="tab-btn actif" data-cible="mois">Mois en cours</button>
   <button class="tab-btn"       data-cible="bilan">Bilan hydrique</button>
   <button class="tab-btn"       data-cible="pheno">Phénologie</button>
+  <button class="tab-btn"       data-cible="gel">Gel et chaleur</button>
   <button class="tab-btn"       data-cible="heatmap">Heatmap T° max</button>
   <button class="tab-btn"       data-cible="records">Records</button>
 </div>
@@ -1080,6 +1354,28 @@ def rendre_html(ctx: dict) -> str:
   <p style="font-size:12px;color:var(--texte-doux);margin-top:10px">
     DJC = Σ max(0, (TN+TX)/2 − Tbase) depuis le 1ᵉʳ jan. ·
     Seuils : ARVALIS / INRAE · Médiane calculée sur 1995-2024 (station 87187003).
+  </p>
+</div>
+
+<div id="gel" class="panneau">
+  <h2>Gelées {ctx['annee']} — calendrier annuel (Tn journalière)</h2>
+  {gc_html}
+
+  <h2 style="margin-top:28px">Stress thermique bovin (ITH) — {ctx['annee']}</h2>
+  {gc_alerte_html}
+  <div class="legende">
+    <span class="leg-ith-ok">Confort (ITH &lt; 68)</span>
+    <span class="leg-ith-al">Alerte (68-72)</span>
+    <span class="leg-ith-mo">Stress modéré (72-78)</span>
+    <span class="leg-ith-sv">Stress sévère (78-84)</span>
+    <span class="leg-ith-dg">Danger (≥ 84)</span>
+  </div>
+  <canvas id="ith_chart" style="max-height:340px"></canvas>
+  <p style="font-size:12px;color:var(--texte-doux);margin-top:8px">
+    ITH = (1,8·TX + 32) − (0,55 − 0,0055·HRmoy) × (1,8·TX − 26) ·
+    HRmoy = (UN + UX) / 2 · Seuils et formule : INRAE,
+    recommandations stress thermique bovin. Barres = jours par classe ITH en
+    {ctx['annee']} · Ligne pointillée = total jours de stress moyen 1995-2024.
   </p>
 </div>
 
@@ -1173,6 +1469,39 @@ new Chart(document.getElementById('bilan_chart'), {{
       y:  {{ position: 'left',  title: {{ display: true, text: 'mm cumulés' }}, min: 0 }},
       y1: {{ position: 'right', title: {{ display: true, text: 'P−ETP (mm)' }},
              grid: {{ color: c => c.tick.value === 0 ? '#56b85e66' : '#2c333d' }} }},
+    }},
+  }}
+}});
+
+new Chart(document.getElementById('ith_chart'), {{
+  data: {{
+    labels: DATA.gc.labels,
+    datasets: [
+      // ── Barres empilées (jours par classe ITH) ──────────────────────────
+      {{ type: 'bar', label: 'Confort',       data: DATA.gc.confort,
+         backgroundColor: '#2a6496', stack: 'an' }},
+      {{ type: 'bar', label: 'Alerte',        data: DATA.gc.alerte,
+         backgroundColor: '#d4ac0d', stack: 'an' }},
+      {{ type: 'bar', label: 'Stress modéré', data: DATA.gc.mod,
+         backgroundColor: '#e8995c', stack: 'an' }},
+      {{ type: 'bar', label: 'Stress sévère', data: DATA.gc.sev,
+         backgroundColor: '#c0392b', stack: 'an' }},
+      {{ type: 'bar', label: 'Danger',        data: DATA.gc.danger,
+         backgroundColor: '#7b241c', stack: 'an' }},
+      // ── Référence : total jours de stress (1995-2024) ───────────────────
+      {{ type: 'line', label: 'Stress total moyen 1995-2024',
+         data: DATA.gc.ref_stress,
+         borderColor: '#9aa3ad', borderDash: [5,5], borderWidth: 1.5,
+         pointRadius: 4, pointBackgroundColor: '#9aa3ad',
+         fill: false, spanGaps: true }},
+    ],
+  }},
+  options: {{
+    responsive: true, maintainAspectRatio: false,
+    plugins: {{ legend: {{ display: false }} }},
+    scales: {{
+      x: {{}},
+      y: {{ stacked: true, title: {{ display: true, text: 'Nombre de jours' }}, min: 0 }},
     }},
   }}
 }});
