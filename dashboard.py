@@ -1593,7 +1593,7 @@ function exporterCSV() {{
     const tn = d.tn[i] != null ? d.tn[i] : '';
     lignes.push(`${{l}},${{rr}},${{tx}},${{tn}}`);
   }});
-  const blob = new Blob(['﻿' + lignes.join('\n')], {{type: 'text/csv;charset=utf-8;'}});
+  const blob = new Blob(['﻿' + lignes.join('\\n')], {{type: 'text/csv;charset=utf-8;'}});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
