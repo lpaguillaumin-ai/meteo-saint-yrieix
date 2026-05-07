@@ -44,8 +44,9 @@ git push -u origin main
 ### 3. Activer GitHub Pages
 
 1. Dans GitHub, aller dans **Settings → Pages**.
-2. À la ligne **Source**, choisir **GitHub Actions**.
-3. (Facultatif) Dans **Settings → Actions → General**, vérifier que les workflows
+2. Sous **"Build and deployment" → Source**, choisir **Deploy from a branch**.
+3. Sélectionner la branche **main** et le dossier **`/docs`**, puis **Save**.
+4. Dans **Settings → Actions → General**, vérifier que les workflows
    ont bien le droit d'écrire (`Read and write permissions`).
 
 ### 4. Lancer la première mise à jour
@@ -105,7 +106,7 @@ Si vous avez Python ≥ 3.10 installé :
 python download.py             # crée data/quotidien.csv
 python download_historique.py  # crée data/historique.csv (1 fois suffit)
 python normales.py             # crée data/normales.csv  (à refaire si historique change)
-python dashboard.py            # crée output/index.html
+python dashboard.py            # crée docs/index.html
 ```
 
 Aucune dépendance externe — uniquement la bibliothèque standard Python.
@@ -124,4 +125,4 @@ Aucune dépendance externe — uniquement la bibliothèque standard Python.
   d'un dépôt sans activité depuis 60 jours. Faire un commit (même trivial) ou
   cliquer **Run workflow** une fois pour relancer la planification.
 
-Pour toute question technique, voir aussi `claude.md` à la racine.
+Pour la description détaillée de chaque onglet et des formules utilisées, voir [`DOCUMENTATION.md`](DOCUMENTATION.md).
