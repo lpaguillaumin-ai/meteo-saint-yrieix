@@ -2,8 +2,10 @@ name: Mise à jour quotidienne
 
 on:
   schedule:
-    # 07h00 UTC = 09h00 heure française en été, 08h00 en hiver
-    - cron: '0 7 * * *'
+    # 15h00 UTC = 17h00 heure française en été, 16h en hiver.
+    # Météo-France publie le fichier quotidien du dépt 87 vers 13h30 UTC,
+    # on garde une marge pour s'assurer que la donnée du jour est disponible.
+    - cron: '0 15 * * *'
   workflow_dispatch:  # permet aussi un déclenchement manuel depuis l'onglet Actions
 
 permissions:
