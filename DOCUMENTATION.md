@@ -151,42 +151,97 @@ La courbe de référence est la **moyenne** de ce cumul, calculée sur 1995–20
 
 ## 4. Onglet — Phénologie
 
-### Ce qui est affiché
+L'onglet se compose de **trois blocs** : un suivi annuel de l'herbe (base 0 °C),
+puis deux sections **maïs** et **blé** pilotées par une **date de semis saisie par
+l'utilisateur** et recalculées en direct dans le navigateur.
 
-**Graphique à 9 séries** : degrés-jours de croissance cumulés depuis le 1er janvier pour trois bases de température (0 °C, 6 °C, 10 °C), chacune en trait plein (année en cours) et pointillés (médiane historique 1995–2024). Trois lignes horizontales marquent les seuils phénologiques.
+### 4.1 Herbe — cumul annuel base 0 °C
 
-**Tableau des seuils** : pour chaque seuil, le DJC actuel avec une barre de progression, la date de franchissement cette année (ou "en cours"), et la date médiane historique 1995–2024.
+**Graphique** : degrés-jours de croissance cumulés depuis le 1er janvier en base 0 °C,
+en trait plein (année en cours) et pointillés (médiane historique 1995–2024), avec une
+ligne horizontale au seuil de 200 °C·j.
 
-### Formules
-
-#### Degrés-Jours de Croissance (DJC / GDD)
+**Tableau** : DJC actuel avec barre de progression, date de franchissement cette année
+(ou « en cours »), et date médiane historique 1995–2024.
 
 ```
-DJC_jour(base) = max(0,  (TN + TX) / 2  −  Tbase)
-DJC_cumulé(J)  = Σ DJC_jour(base)  pour tous les jours du 1er janvier au jour J
+DJC_jour(0) = max(0, (TN + TX) / 2)
+DJC_cumulé(J) = Σ DJC_jour(0)  du 1er janvier au jour J
 ```
-
-> **Référence** : McMaster G.S. & Wilhelm W.W., *Agricultural and Forest Meteorology*, 87(4), 1997.
-
-#### Trois bases de calcul
-
-| Base | Culture visée |
-|---|---|
-| 0 °C | Développement végétatif général, pousse de l'herbe |
-| 6 °C | Céréales à paille (blé, orge) |
-| 10 °C | Maïs grain |
-
-#### Seuils phénologiques
 
 | Seuil | Base | Valeur | Signification | Source |
 |---|---|---|---|---|
-| Démarrage pousse de l'herbe | 0 °C | 200 DJC | Reprise de croissance herbacée | INRAE / ARVALIS |
-| Épiaison blé tendre | 6 °C | 1 000 DJC | Sortie des épis | ARVALIS, *Guide Grandes Cultures* 2022 |
-| Floraison maïs grain | 10 °C | 1 700 DJC | Pollinisation du maïs | ARVALIS / INRAE |
+| Démarrage pousse de l'herbe | 0 °C | 200 °C·j | Reprise de croissance herbacée | INRAE / ARVALIS |
 
-#### Médiane historique (P50)
+> **Référence DJC** : McMaster G.S. & Wilhelm W.W., *Agricultural and Forest Meteorology*, 87(4), 1997.
 
-Pour chaque seuil et chaque année de référence (1995–2024), le script calcule le jour de l'année (DOY) où le cumul DJC franchit le seuil. La médiane de ces 30 DOY donne la date de référence affichée.
+### 4.2 Maïs — suivi depuis la date de semis (modèle farmi)
+
+L'utilisateur saisit une **date de semis** et choisit une **précocité variétale**.
+Le cumul de degrés-jours est calculé en **base 6 °C** avec des **plafonds** (modèle
+[farmi.com](https://www.farmi.com/article/somme-chaleur-germination-mais)) :
+
+```
+TX_eff = min(TX, 30 °C)        # plafond : au-delà de 30 °C, pas de gain supplémentaire
+TN_eff = max(TN, 6 °C)         # plancher : en deçà de 6 °C, ramené à la base
+DJC_jour(maïs) = max(0, (TN_eff + TX_eff) / 2 − 6)
+```
+
+| Stade | Seuil (°C·j base 6) | Source |
+|---|---|---|
+| Levée | 80 | farmi.com |
+| Floraison (sortie des soies) | 850 | ARVALIS |
+| Maturité physiologique | 1 550 → 1 850 selon précocité | indice de précocité variétale |
+
+Le seuil de maturité dépend du **sélecteur de précocité** : très précoce 1 550 ·
+précoce 1 650 · ½ précoce 1 750 · ½ tardif 1 850 °C·j.
+
+### 4.3 Blé tendre d'hiver — suivi depuis la date de semis (base 0 °C)
+
+Saisie d'une **date de semis d'automne** ; le cumul est calculé en **base 0 °C**
+(convention ARVALIS) et **traverse le changement d'année civile** (semis d'octobre
+N-1 → récolte de l'été N).
+
+```
+DJC_jour(blé) = max(0, (TN + TX) / 2)    # base 0 °C, sans plafond
+```
+
+| Stade | Seuil (°C·j base 0) |
+|---|---|
+| Levée | 150 |
+| Début tallage | 450 |
+| Épi 1 cm (début montaison) | 1 000 |
+| Épiaison | 1 700 |
+| Floraison | 1 900 |
+| Maturité | 2 300 |
+
+> Seuils blé indicatifs (ordre de grandeur ARVALIS pour le Limousin), ajustables dans
+> `dashboard.py` (`BLE_STADES`).
+
+### Calcul interactif et projection
+
+Pour les deux cultures, le calcul est réalisé **côté navigateur** à partir de la série
+journalière TN/TX embarquée dans la page (année courante + précédente). Chaque graphique
+affiche :
+
+- la courbe **observée** (trait plein) jusqu'à la dernière mesure disponible ;
+- une **projection** (pointillés) au-delà de cette date, et une courbe **« normale »**,
+  toutes deux construites à partir des **incréments journaliers médians par jour-de-l'année**
+  calculés sur 1995–2024 (mêmes formules et plafonds que ci-dessus) ;
+- des lignes horizontales pour chaque seuil de stade.
+
+Le tableau de chaque culture donne, par stade : le seuil, la date **atteinte** (✓) ou
+**prévue** (projection), et la date **normale** 1995–2024. Les saisies (dates de semis,
+précocité) sont **mémorisées** d'une visite à l'autre via `localStorage`.
+
+#### Configuration (constantes en tête de `dashboard.py`)
+
+| Constante | Rôle |
+|---|---|
+| `MAIS_BASE`, `MAIS_TX_PLAFOND`, `MAIS_TN_PLANCHER` | base et plafonds farmi du maïs |
+| `MAIS_PRECOCITES` | seuils de maturité par groupe de précocité |
+| `MAIS_STADES` | stades maïs (levée, floraison, maturité) |
+| `BLE_BASE`, `BLE_STADES` | base 0 et stades du blé |
 
 ---
 
@@ -309,5 +364,6 @@ La température normale mensuelle affichée dans le climogramme est `(TN_normale
 | Insolation avant 2000 | ~30 % de valeurs manquantes. Records et normales d'insolation à interpréter avec précaution. |
 | Données de la veille | Météo-France publie les données avec un délai de 1 à 2 jours. Le tableau affiche les données disponibles au moment de la dernière mise à jour. |
 | ITH bovin | Formule conçue pour des bovins en bâtiment. Les seuils sont des repères agronomiques, non des prévisions individuelles. |
-| DJC maïs | La station est à 404 m d'altitude. Le seuil de 1 700 DJC base 10 °C (floraison maïs) n'est pas atteint certaines années, ce qui est cohérent avec le contexte altitudinal. |
+| DJC cultures | La station est à 404 m d'altitude : les cumuls maïs (base 6, plafonds farmi) et blé (base 0) restent modestes, et la maturité du maïs n'est atteinte que les années chaudes, ce qui est cohérent avec le contexte altitudinal. Les seuils de stades sont des repères agronomiques indicatifs, non des prévisions parcellaires. |
+| Projection cultures | Au-delà de la dernière mesure, les courbes maïs/blé sont prolongées par la **normale** 1995–2024 (incréments médians par jour-de-l'année). Les dates de stades « prévues » sont donc des estimations en année normale, pas des prévisions météo. |
 | Année de référence | Les calculs de références utilisent toujours la période 1995–2024. Une mise à jour de cette fenêtre nécessite de relancer `normales.py` et de recalculer les médianes dans `dashboard.py`. |
