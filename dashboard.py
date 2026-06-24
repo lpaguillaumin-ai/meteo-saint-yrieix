@@ -5,7 +5,7 @@ Onglets :
   Bilan hydrique — P cumulée, ETP cumulée et bilan P-ETP vs référence 1995-2024
   Heatmap T° max — calendrier 12 mois glissants
   Records        — valeurs extrêmes depuis 1994
-  Phénologie     — sommes de degrés-jours et seuils agroclimatiques
+  Phénologie     — herbe (base 0) + suivi maïs/blé piloté par la date de semis
 
 Formules et sources
 ───────────────────
@@ -22,10 +22,15 @@ Degrés-jours de croissance (DJC / GDD)
   Base 10 °C : maïs
   Réf. : McMaster & Wilhelm, Agric. Forest Meteorol. 87(4), 1997.
 
-Seuils phénologiques
-  200 DJC base 0 °C  : démarrage pousse de l'herbe — INRAE / ARVALIS
-  1 000 DJC base 6 °C : épiaison blé tendre — ARVALIS, Guide Grandes Cultures 2022
-  1 700 DJC base 10 °C : floraison maïs grain — ARVALIS / INRAE
+Suivi des cultures depuis la date de semis (calcul interactif côté navigateur)
+  Maïs : base 6 °C, plafonds Tmax 30 °C / Tmin 6 °C (modèle farmi.com).
+         Levée ≈ 80 °C·j · floraison ≈ 850 °C·j · maturité 1 550-1 850 °C·j (précocité).
+  Blé tendre d'hiver : base 0 °C, semis d'automne (cycle à cheval sur deux années).
+  Au-delà de la dernière mesure : projection sur la normale 1995-2024 (incréments
+  journaliers médians par jour-de-l'année).
+
+Seuil herbe
+  200 DJC base 0 °C : démarrage pousse de l'herbe — INRAE / ARVALIS
 
 Normales de référence : fenêtre 1995-2024, station 87187003, méthode OMM.
 
@@ -666,15 +671,55 @@ def rendre_gel_chaleur_html(gc: dict) -> str:
 
 # ── Phénologie — degrés-jours de croissance ───────────────────────────────────
 
-BASES_GDD = [0, 6, 10]
+# Onglet « herbe » conservé : cumul annuel base 0 °C depuis le 1ᵉʳ janvier.
+BASES_GDD = [0]
 SEUILS_PHENO = [
     {"base": 0,  "valeur": 200,  "libelle": "Démarrage pousse de l'herbe",
      "detail": "200 DJC base 0 °C — INRAE / ARVALIS"},
-    {"base": 6,  "valeur": 1000, "libelle": "Épiaison blé tendre",
-     "detail": "1 000 DJC base 6 °C — ARVALIS 2022"},
-    {"base": 10, "valeur": 1700, "libelle": "Floraison maïs grain",
-     "detail": "1 700 DJC base 10 °C — ARVALIS / INRAE"},
 ]
+
+# ── Cultures pilotées par la date de semis (calcul interactif côté navigateur) ──
+# Maïs : modèle farmi.com — base 6 °C, plafond Tmax 30 °C, plancher Tmin 6 °C.
+MAIS_BASE = 6.0
+MAIS_TX_PLAFOND = 30.0
+MAIS_TN_PLANCHER = 6.0
+# Seuil de maturité physiologique (°C·j base 6 depuis le semis) selon la précocité.
+MAIS_PRECOCITES = [
+    {"cle": "tres_precoce", "libelle": "Très précoce", "maturite": 1550},
+    {"cle": "precoce",      "libelle": "Précoce",      "maturite": 1650},
+    {"cle": "demi_precoce", "libelle": "½ précoce",    "maturite": 1750},
+    {"cle": "demi_tardif",  "libelle": "½ tardif",     "maturite": 1850},
+]
+MAIS_DEFAUT_PRECOCITE = "demi_precoce"
+# Stades : seuils °C·j base 6 depuis le semis (maturité ← précocité, donc None ici).
+MAIS_STADES = [
+    {"cle": "levee",     "libelle": "Levée",     "seuil": 80,  "detail": "≈ 80 °C·j — farmi.com"},
+    {"cle": "floraison", "libelle": "Floraison", "seuil": 850, "detail": "sortie des soies — ARVALIS"},
+    {"cle": "maturite",  "libelle": "Maturité",  "seuil": None, "detail": "selon précocité variétale"},
+]
+
+# Blé tendre d'hiver : base 0 °C (convention ARVALIS), semis d'automne (cycle à cheval).
+BLE_BASE = 0.0
+BLE_STADES = [
+    {"cle": "levee",    "libelle": "Levée",         "seuil": 150,  "detail": "≈ 150 °C·j base 0"},
+    {"cle": "tallage",  "libelle": "Début tallage", "seuil": 450,  "detail": "≈ 450 °C·j base 0"},
+    {"cle": "epi1cm",   "libelle": "Épi 1 cm",      "seuil": 1000, "detail": "début montaison ≈ 1000 °C·j base 0"},
+    {"cle": "epiaison", "libelle": "Épiaison",      "seuil": 1700, "detail": "≈ 1700 °C·j base 0"},
+    {"cle": "floraison","libelle": "Floraison",     "seuil": 1900, "detail": "≈ 1900 °C·j base 0"},
+    {"cle": "maturite", "libelle": "Maturité",      "seuil": 2300, "detail": "≈ 2300 °C·j base 0"},
+]
+
+
+def _inc_base0(tn: float, tx: float) -> float:
+    """Incrément de degrés-jours base 0 °C pour une journée."""
+    return max(0.0, (tn + tx) / 2.0)
+
+
+def _inc_mais(tn: float, tx: float) -> float:
+    """Incrément maïs base 6 °C avec plafonds farmi (Tmax≤30, Tmin≥6)."""
+    tn_e = max(tn, MAIS_TN_PLANCHER)
+    tx_e = min(tx, MAIS_TX_PLAFOND)
+    return max(0.0, (tn_e + tx_e) / 2.0 - MAIS_BASE)
 
 
 def _gdd_annee(jours: list[dict], base: float) -> list[float]:
@@ -763,6 +808,72 @@ def construire_phenologie(quotidien: list[dict], historique: list[dict], annee: 
         "gdd_ref": {str(b): gdd_ref[b] for b in BASES_GDD},
         "seuils": seuils,
         "annee": annee,
+    }
+
+
+# ── Cultures pilotées par la date de semis ────────────────────────────────────
+
+def construire_cultures(quotidien: list[dict], historique: list[dict],
+                        derniere_date: date) -> dict:
+    """Données pour le calcul interactif (côté navigateur) des degrés-jours
+    cumulés depuis une date de semis saisie par l'utilisateur.
+
+    - série journalière réelle (année courante + précédente) → cumul observé ;
+    - incréments médians par jour-de-l'année (1995-2024) → projection « normale »
+      au-delà de la dernière mesure et scénario de référence.
+    """
+    # Série réelle continue : on remonte à l'année précédente pour couvrir un
+    # semis de blé d'automne (cycle à cheval sur deux années civiles).
+    debut = date(derniere_date.year - 1, 1, 1)
+    jours = sorted(
+        [j for j in quotidien
+         if j["date"] >= debut and j["TN"] is not None and j["TX"] is not None],
+        key=lambda j: j["date"],
+    )
+    daily_dates = [j["date"].isoformat() for j in jours]
+    daily_g0 = [round(_inc_base0(j["TN"], j["TX"]), 2) for j in jours]
+    daily_gm = [round(_inc_mais(j["TN"], j["TX"]), 2) for j in jours]
+
+    # Incréments médians par jour-de-l'année sur la période de référence.
+    par_doy_g0: dict[int, list[float]] = defaultdict(list)
+    par_doy_gm: dict[int, list[float]] = defaultdict(list)
+    for j in historique:
+        if j["TN"] is None or j["TX"] is None:
+            continue
+        if not (ANNEE_REF_DEBUT <= j["date"].year <= ANNEE_REF_FIN):
+            continue
+        doy = j["date"].timetuple().tm_yday
+        par_doy_g0[doy].append(_inc_base0(j["TN"], j["TX"]))
+        par_doy_gm[doy].append(_inc_mais(j["TN"], j["TX"]))
+
+    def _med(vals: list[float]) -> float:
+        if not vals:
+            return 0.0
+        s = sorted(vals)
+        return s[len(s) // 2]
+
+    norm_g0 = [round(_med(par_doy_g0.get(d, [])), 3) for d in range(1, 367)]
+    norm_gm = [round(_med(par_doy_gm.get(d, [])), 3) for d in range(1, 367)]
+
+    return {
+        "derniere_date": derniere_date.isoformat(),
+        "daily_dates": daily_dates,
+        "daily_g0": daily_g0,
+        "daily_gm": daily_gm,
+        "norm_g0": norm_g0,
+        "norm_gm": norm_gm,
+        "mais": {
+            "stades": MAIS_STADES,
+            "precocites": MAIS_PRECOCITES,
+            "defaut_precocite": MAIS_DEFAUT_PRECOCITE,
+            "defaut_semis": f"{derniere_date.year}-04-20",
+            "cycle_jours": 200,
+        },
+        "ble": {
+            "stades": BLE_STADES,
+            "defaut_semis": f"{derniere_date.year - 1}-10-20",
+            "cycle_jours": 300,
+        },
     }
 
 
@@ -1012,6 +1123,7 @@ def main() -> int:
         "bilan": construire_bilan_hydrique(quotidien, historique, annee),
         "gc":    construire_gel_et_chaleur(quotidien, historique, annee),
         "pheno": construire_phenologie(quotidien, historique, annee),
+        "cultures": construire_cultures(quotidien, historique, derniere_date),
         "heatmap": construire_heatmap(quotidien + historique, derniere_date),
         "records": construire_records(quotidien, historique),
     }
@@ -1095,6 +1207,7 @@ def rendre_html(ctx: dict) -> str:
         "detail_mois": ctx["detail_mois"],
         "bilan": ctx["bilan"],
         "pheno": ctx["pheno"],
+        "cultures": ctx["cultures"],
         "gc": gc_js,
     }, ensure_ascii=False)
 
@@ -1218,6 +1331,20 @@ def rendre_html(ctx: dict) -> str:
   .leg-b0::before  {{ color: #56b85e; }}
   .leg-b6::before  {{ color: #f39c12; }}
   .leg-b10::before {{ color: #e74c3c; }}
+  .cult-ctrl {{ display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+               margin: 6px 0 14px; }}
+  .cult-champ {{ display: flex; flex-direction: column; gap: 4px;
+                font-size: 12px; color: var(--texte-doux); }}
+  .cult-input {{ background: var(--bg-carte); color: var(--texte);
+                border: 1px solid var(--bord); border-radius: 4px;
+                padding: 6px 8px; font-size: 13px; font-family: inherit;
+                color-scheme: dark; }}
+  .cult-input:focus {{ outline: none; border-color: var(--accent-pluie); }}
+  .cult-cumul {{ font-size: 13px; color: var(--texte); align-self: center;
+                padding-bottom: 2px; }}
+  .cult-badge {{ background: #e8995c; color: #1a1f26; font-size: 10px; font-weight: 700;
+                padding: 1px 5px; border-radius: 3px; vertical-align: middle; white-space: nowrap; }}
+  .cult-note {{ font-size: 12px; color: var(--texte-doux); margin-top: 10px; line-height: 1.5; }}
   /* ── Records ── */
   .rec-tuiles {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }}
   .rec-tuile {{ background: var(--bg-carte); border: 1px solid var(--bord);
@@ -1351,13 +1478,11 @@ def rendre_html(ctx: dict) -> str:
 </div>
 
 <div id="pheno" class="panneau" role="tabpanel" aria-labelledby="btn-pheno" tabindex="0">
-  <h2>Phénologie {ctx['annee']} — degrés-jours de croissance depuis le 1ᵉʳ janvier</h2>
+  <h2>Herbe {ctx['annee']} — degrés-jours base 0 °C depuis le 1ᵉʳ janvier</h2>
   <div class="legende">
-    <span class="leg-b0">Base 0 °C — herbe (trait plein · pointillés = méd. 1995-2024)</span>
-    <span class="leg-b6">Base 6 °C — céréales</span>
-    <span class="leg-b10">Base 10 °C — maïs</span>
+    <span class="leg-b0">Herbe base 0 °C (trait plein · pointillés = méd. 1995-2024)</span>
   </div>
-  <canvas id="pheno_chart" style="max-height:340px" role="img" aria-label="Phénologie {ctx['annee']} : degrés-jours cumulés base 0/6/10 °C et médianes historiques 1995-2024"></canvas>
+  <canvas id="pheno_chart" style="max-height:300px" role="img" aria-label="Herbe {ctx['annee']} : degrés-jours cumulés base 0 °C et médiane historique 1995-2024"></canvas>
   <div class="pheno-table-wrap">
     <table class="pheno-table">
       <thead><tr>
@@ -1369,9 +1494,46 @@ def rendre_html(ctx: dict) -> str:
       <tbody>{pheno_seuils_html}</tbody>
     </table>
   </div>
-  <p style="font-size:12px;color:var(--texte-doux);margin-top:10px">
-    DJC = Σ max(0, (TN+TX)/2 − Tbase) depuis le 1ᵉʳ jan. ·
-    Seuils : ARVALIS / INRAE · Médiane calculée sur 1995-2024 (station 87187003).
+
+  <h2 style="margin-top:30px">🌽 Maïs — suivi depuis la date de semis (base 6 °C, modèle farmi)</h2>
+  <div class="cult-ctrl">
+    <label class="cult-champ">Date de semis
+      <input type="date" id="mais_semis" class="cult-input">
+    </label>
+    <label class="cult-champ">Précocité
+      <select id="mais_prec" class="cult-input"></select>
+    </label>
+    <span class="cult-cumul" id="mais_cumul"></span>
+  </div>
+  <canvas id="mais_chart" style="max-height:300px" role="img" aria-label="Maïs : degrés-jours base 6 °C cumulés depuis le semis (observé, projeté et normale)"></canvas>
+  <div class="pheno-table-wrap">
+    <table class="pheno-table">
+      <thead><tr><th>Stade</th><th>Seuil</th><th>Date atteinte / prévue</th><th>Normale 1995-2024</th></tr></thead>
+      <tbody id="mais_stades"></tbody>
+    </table>
+  </div>
+  <p class="cult-note">
+    Σ max(0, (min(TX,30 °C)+max(TN,6 °C))/2 − 6 °C) depuis le semis · plafonds farmi.com ·
+    au-delà du {ctx['cultures']['derniere_date']} : projection sur la normale 1995-2024 (en pointillés).
+  </p>
+
+  <h2 style="margin-top:30px">🌾 Blé tendre — suivi depuis la date de semis (base 0 °C)</h2>
+  <div class="cult-ctrl">
+    <label class="cult-champ">Date de semis
+      <input type="date" id="ble_semis" class="cult-input">
+    </label>
+    <span class="cult-cumul" id="ble_cumul"></span>
+  </div>
+  <canvas id="ble_chart" style="max-height:300px" role="img" aria-label="Blé : degrés-jours base 0 °C cumulés depuis le semis (observé, projeté et normale)"></canvas>
+  <div class="pheno-table-wrap">
+    <table class="pheno-table">
+      <thead><tr><th>Stade</th><th>Seuil</th><th>Date atteinte / prévue</th><th>Normale 1995-2024</th></tr></thead>
+      <tbody id="ble_stades"></tbody>
+    </table>
+  </div>
+  <p class="cult-note">
+    Σ max(0, (TN+TX)/2) base 0 °C depuis le semis (semis d'automne pris en compte) ·
+    au-delà du {ctx['cultures']['derniere_date']} : projection sur la normale 1995-2024 (en pointillés). Seuils ARVALIS indicatifs.
   </p>
 </div>
 
@@ -1528,32 +1690,18 @@ new Chart(document.getElementById('ith_chart'), {{
   }}
 }});
 
+// ── Herbe : cumul annuel base 0 °C ──────────────────────────────────────────
 new Chart(document.getElementById('pheno_chart'), {{
   type: 'line',
   data: {{
     labels: DATA.pheno.labels,
     datasets: [
-      // ── Courbes année en cours ──────────────────────────────────────────
-      {{ label: 'Base 0 °C',  data: DATA.pheno.gdd['0'],
+      {{ label: 'Herbe base 0 °C', data: DATA.pheno.gdd['0'],
          borderColor: '#56b85e', borderWidth: 2.5, pointRadius: 0, tension: 0.2, spanGaps: true }},
-      {{ label: 'Base 6 °C',  data: DATA.pheno.gdd['6'],
-         borderColor: '#f39c12', borderWidth: 2.5, pointRadius: 0, tension: 0.2, spanGaps: true }},
-      {{ label: 'Base 10 °C', data: DATA.pheno.gdd['10'],
-         borderColor: '#e74c3c', borderWidth: 2.5, pointRadius: 0, tension: 0.2, spanGaps: true }},
-      // ── Références historiques P50 ───────────────────────────────────────
-      {{ label: 'Réf. base 0 °C',  data: DATA.pheno.gdd_ref['0'],
+      {{ label: 'Réf. base 0 °C', data: DATA.pheno.gdd_ref['0'],
          borderColor: '#56b85e', borderDash: [4,4], borderWidth: 1.2, pointRadius: 0, tension: 0.2, spanGaps: true }},
-      {{ label: 'Réf. base 6 °C',  data: DATA.pheno.gdd_ref['6'],
-         borderColor: '#f39c12', borderDash: [4,4], borderWidth: 1.2, pointRadius: 0, tension: 0.2, spanGaps: true }},
-      {{ label: 'Réf. base 10 °C', data: DATA.pheno.gdd_ref['10'],
-         borderColor: '#e74c3c', borderDash: [4,4], borderWidth: 1.2, pointRadius: 0, tension: 0.2, spanGaps: true }},
-      // ── Lignes de seuils ────────────────────────────────────────────────
-      {{ label: '200 DJC (herbe)',  data: Array(DATA.pheno.labels.length).fill(200),
-         borderColor: 'rgba(86,184,94,0.45)',  borderDash: [2,5], borderWidth: 1, pointRadius: 0 }},
-      {{ label: '1000 DJC (blé)',   data: Array(DATA.pheno.labels.length).fill(1000),
-         borderColor: 'rgba(243,156,18,0.45)', borderDash: [2,5], borderWidth: 1, pointRadius: 0 }},
-      {{ label: '1700 DJC (maïs)',  data: Array(DATA.pheno.labels.length).fill(1700),
-         borderColor: 'rgba(231,76,60,0.45)',  borderDash: [2,5], borderWidth: 1, pointRadius: 0 }},
+      {{ label: '200 °C·j (herbe)', data: Array(DATA.pheno.labels.length).fill(200),
+         borderColor: 'rgba(86,184,94,0.45)', borderDash: [2,5], borderWidth: 1, pointRadius: 0 }},
     ],
   }},
   options: {{
@@ -1565,6 +1713,161 @@ new Chart(document.getElementById('pheno_chart'), {{
     }},
   }}
 }});
+
+// ── Cultures pilotées par la date de semis (calcul interactif) ───────────────
+(function() {{
+  var C = DATA.cultures;
+  var idx = {{}};
+  for (var i = 0; i < C.daily_dates.length; i++) idx[C.daily_dates[i]] = i;
+
+  function parseISO(s) {{ var p = s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }}
+  function isoOf(d) {{
+    var m = d.getMonth()+1, j = d.getDate();
+    return d.getFullYear() + '-' + (m<10?'0':'') + m + '-' + (j<10?'0':'') + j;
+  }}
+  function doy(d) {{ return Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000); }}
+  function fmtFR(d) {{
+    var m = d.getMonth()+1, j = d.getDate();
+    return (j<10?'0':'') + j + '/' + (m<10?'0':'') + m + '/' + d.getFullYear();
+  }}
+  function fmtCourt(d) {{
+    var m = d.getMonth()+1, j = d.getDate();
+    return (j<10?'0':'') + j + '/' + (m<10?'0':'') + m;
+  }}
+  var dDer = parseISO(C.derniere_date);
+
+  function calcul(semisISO, kind, cycleJours) {{
+    var dailyG = (kind === 'mais') ? C.daily_gm : C.daily_g0;
+    var normG  = (kind === 'mais') ? C.norm_gm : C.norm_g0;
+    var d0 = parseISO(semisISO);
+    var dates = [], real = [], norm = [];
+    var cumReal = 0, cumNorm = 0;
+    for (var i = 0; i <= cycleJours; i++) {{
+      var d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i);
+      var incNorm = normG[(doy(d)-1+366) % 366] || 0;
+      var k = idx[isoOf(d)];
+      var incReal = (k !== undefined && d.getTime() <= dDer.getTime()) ? dailyG[k] : incNorm;
+      cumReal += incReal; cumNorm += incNorm;
+      dates.push(d); real.push(Math.round(cumReal*10)/10); norm.push(Math.round(cumNorm*10)/10);
+    }}
+    return {{ dates: dates, real: real, norm: norm }};
+  }}
+
+  function premiereDate(dates, serie, seuil) {{
+    for (var i = 0; i < serie.length; i++) if (serie[i] >= seuil) return dates[i];
+    return null;
+  }}
+
+  var charts = {{}};
+
+  function rendre(kind) {{
+    var cfg = (kind === 'mais') ? C.mais : C.ble;
+    var couleur = (kind === 'mais') ? '#e67e22' : '#d4a017';
+    var semisISO = document.getElementById(kind + '_semis').value || cfg.defaut_semis;
+    var r = calcul(semisISO, kind, cfg.cycle_jours);
+
+    // Seuils (maïs : maturité ← précocité sélectionnée)
+    var stades = cfg.stades.map(function(s) {{ return {{cle:s.cle, libelle:s.libelle, detail:s.detail, seuil:s.seuil}}; }});
+    if (kind === 'mais') {{
+      var prec = document.getElementById('mais_prec').value;
+      var mp = cfg.precocites.filter(function(p) {{ return p.cle === prec; }})[0];
+      stades.forEach(function(s) {{ if (s.cle === 'maturite' && mp) s.seuil = mp.maturite; }});
+    }}
+
+    // Découpe observé / projeté à la dernière mesure
+    var obs = [], proj = [];
+    for (var i = 0; i < r.dates.length; i++) {{
+      var t = r.dates[i].getTime(), td = dDer.getTime();
+      obs.push(t <= td ? r.real[i] : null);
+      proj.push(t >= td ? r.real[i] : null);
+    }}
+
+    // Cumul actuel (dernière mesure) + écart à la normale
+    var iAct = -1;
+    for (var i = 0; i < r.dates.length; i++) {{ if (r.dates[i].getTime() <= dDer.getTime()) iAct = i; }}
+    var txt = '—';
+    if (iAct >= 0) {{
+      var ec = Math.round(r.real[iAct] - r.norm[iAct]);
+      var ecTxt = ec === 0 ? 'dans la normale' : (ec > 0 ? '+' + ec + ' °C·j vs normale' : ec + ' °C·j vs normale');
+      var ecCol = ec >= 0 ? '#56b85e' : '#e8995c';
+      txt = '<b>' + Math.round(r.real[iAct]) + ' °C·j</b> au ' + fmtFR(dDer)
+          + ' · <span style="color:' + ecCol + '">' + ecTxt + '</span>';
+    }}
+    document.getElementById(kind + '_cumul').innerHTML = txt;
+
+    // Tableau des stades
+    var lignes = '';
+    stades.forEach(function(s) {{
+      var dReal = premiereDate(r.dates, r.real, s.seuil);
+      var dNorm = premiereDate(r.dates, r.norm, s.seuil);
+      var cellReal = '<span style="color:var(--texte-doux)">—</span>';
+      if (dReal) {{
+        if (dReal.getTime() <= dDer.getTime())
+          cellReal = '<span style="color:#56b85e">✓ ' + fmtFR(dReal) + '</span>';
+        else
+          cellReal = '~ ' + fmtFR(dReal) + ' <span class="cult-badge">prévu</span>';
+      }}
+      var cellNorm = dNorm ? fmtFR(dNorm) : '—';
+      lignes += '<tr><td>' + s.libelle
+              + '<br><small style="color:var(--texte-doux)">' + s.detail + '</small></td>'
+              + '<td class="rn">' + s.seuil + ' °C·j</td>'
+              + '<td class="rn">' + cellReal + '</td>'
+              + '<td class="rn">' + cellNorm + '</td></tr>';
+    }});
+    document.getElementById(kind + '_stades').innerHTML = lignes;
+
+    // Lignes de seuils horizontales (faibles)
+    var seuilLignes = stades.map(function(s) {{
+      return {{ data: Array(r.dates.length).fill(s.seuil), borderColor: 'rgba(150,150,150,0.30)',
+               borderDash: [2,4], borderWidth: 1, pointRadius: 0, fill: false }};
+    }});
+
+    var datasets = [
+      {{ label: 'Observé', data: obs, borderColor: couleur, borderWidth: 2.6, pointRadius: 0, tension: 0.15, spanGaps: false }},
+      {{ label: 'Projeté (normale)', data: proj, borderColor: couleur, borderDash: [5,4], borderWidth: 1.8, pointRadius: 0, tension: 0.15, spanGaps: false }},
+      {{ label: 'Normale 1995-2024', data: r.norm, borderColor: 'rgba(120,120,120,0.7)', borderDash: [3,3], borderWidth: 1.4, pointRadius: 0, tension: 0.15 }}
+    ].concat(seuilLignes);
+
+    if (charts[kind]) charts[kind].destroy();
+    charts[kind] = new Chart(document.getElementById(kind + '_chart'), {{
+      type: 'line',
+      data: {{ labels: r.dates.map(fmtCourt), datasets: datasets }},
+      options: {{
+        responsive: true, maintainAspectRatio: false,
+        plugins: {{ legend: {{ display: false }} }},
+        scales: {{
+          x: {{ ticks: {{ maxTicksLimit: 12, autoSkip: true }} }},
+          y: {{ title: {{ display: true, text: '°C·j depuis le semis' }}, min: 0 }},
+        }},
+      }}
+    }});
+  }}
+
+  // Initialisation des contrôles + persistance localStorage
+  function lire(cle, defaut) {{ try {{ return localStorage.getItem(cle) || defaut; }} catch(e) {{ return defaut; }} }}
+  function ecrire(cle, val) {{ try {{ localStorage.setItem(cle, val); }} catch(e) {{}} }}
+
+  // Sélecteur de précocité maïs
+  var sel = document.getElementById('mais_prec');
+  C.mais.precocites.forEach(function(p) {{
+    var o = document.createElement('option');
+    o.value = p.cle; o.textContent = p.libelle + ' (' + p.maturite + ' °C·j)';
+    sel.appendChild(o);
+  }});
+  sel.value = lire('meteo_mais_prec', C.mais.defaut_precocite);
+
+  var maisSemis = document.getElementById('mais_semis');
+  var bleSemis  = document.getElementById('ble_semis');
+  maisSemis.value = lire('meteo_mais_semis', C.mais.defaut_semis);
+  bleSemis.value  = lire('meteo_ble_semis', C.ble.defaut_semis);
+
+  maisSemis.addEventListener('change', function() {{ ecrire('meteo_mais_semis', maisSemis.value); rendre('mais'); }});
+  sel.addEventListener('change', function() {{ ecrire('meteo_mais_prec', sel.value); rendre('mais'); }});
+  bleSemis.addEventListener('change', function() {{ ecrire('meteo_ble_semis', bleSemis.value); rendre('ble'); }});
+
+  rendre('mais');
+  rendre('ble');
+}})();
 
 // Onglets
 function _activerOnglet(btn) {{
