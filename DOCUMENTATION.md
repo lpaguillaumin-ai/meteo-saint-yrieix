@@ -14,7 +14,7 @@ Période de référence (normales) : **1995–2024**
 3. [Onglet — Bilan hydrique](#3-onglet--bilan-hydrique)
 4. [Onglet — Phénologie](#4-onglet--phénologie)
 5. [Onglet — Gel et chaleur](#5-onglet--gel-et-chaleur)
-6. [Onglet — Heatmap T° max](#6-onglet--heatmap-t-max)
+6. [Onglet — Stress thermique bovin](#6-onglet--stress-thermique-bovin)
 7. [Onglet — Records](#7-onglet--records)
 8. [Normales de référence](#8-normales-de-référence)
 9. [Limites et précautions](#9-limites-et-précautions)
@@ -265,6 +265,10 @@ précocité) sont **mémorisées** d'une visite à l'autre via `localStorage`.
 
 ### Ce qui est affiché
 
+**Heatmap T° max — 12 mois glissants** (en tête de l'onglet) : grille calendrier sur les **365 derniers jours glissants** (de J−364 à aujourd'hui). Chaque cellule correspond à un jour et est colorée selon la TX observée, sur une échelle continue allant du bleu froid au rouge chaud.
+
+L'échelle de couleur est normalisée entre le minimum et le maximum de TX observés sur la période affichée (5 paliers : bleu foncé, bleu, gris, orange, rouge). Les colonnes sont des semaines (lundi → dimanche, de gauche à droite) ; les étiquettes de mois indiquent la semaine où débute chaque mois.
+
 **Calendrier annuel des gelées** : grille semaines × jours (style heatmap) pour l'année en cours. Chaque cellule représente un jour, colorié selon la catégorie de gel.
 
 | Couleur | Catégorie | Condition |
@@ -279,6 +283,12 @@ précocité) sont **mémorisées** d'une visite à l'autre via `localStorage`.
 ```
 Saison sans gel (j) = date 1ère gelée d'automne − date dernière gelée de printemps − 1
 ```
+
+---
+
+## 6. Onglet — Stress thermique bovin
+
+### Ce qui est affiché
 
 **Graphique ITH** : barres empilées (jours par classe de stress thermique, par mois) pour l'année en cours, plus une ligne pointillée indiquant le nombre moyen de jours de stress (toutes classes ≥ Alerte) sur 1995–2024.
 
@@ -305,18 +315,6 @@ avec HRmoy = (UN + UX) / 2
 | Stress modéré | 72 – 78 | Orange |
 | Stress sévère | 78 – 84 | Rouge |
 | Danger | ≥ 84 | Rouge foncé |
-
----
-
-## 6. Onglet — Heatmap T° max
-
-### Ce qui est affiché
-
-Grille calendrier sur les **365 derniers jours glissants** (de J−364 à aujourd'hui). Chaque cellule correspond à un jour et est colorée selon la TX observée, sur une échelle continue allant du bleu froid au rouge chaud.
-
-L'échelle de couleur est normalisée entre le minimum et le maximum de TX observés sur la période affichée (5 paliers : bleu foncé, bleu, gris, orange, rouge).
-
-Les colonnes sont des semaines (lundi → dimanche, de gauche à droite). Les étiquettes de mois indiquent la semaine où débute chaque mois.
 
 ---
 

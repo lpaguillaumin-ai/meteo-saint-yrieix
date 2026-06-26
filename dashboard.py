@@ -1,11 +1,12 @@
 """Génère output/index.html : tableau de bord météo St-Yrieix.
 
 Onglets :
-  Mois en cours  — KPIs + détail jour-par-jour + climogramme 12 mois
-  Bilan hydrique — P cumulée, ETP cumulée et bilan P-ETP vs référence 1995-2024
-  Heatmap T° max — calendrier 12 mois glissants
-  Records        — valeurs extrêmes depuis 1994
-  Phénologie     — herbe (base 0) + suivi maïs/blé piloté par la date de semis
+  Mois en cours          — KPIs + détail jour-par-jour + climogramme 12 mois
+  Bilan hydrique         — P cumulée, ETP cumulée et bilan P-ETP vs réf. 1995-2024
+  Phénologie             — herbe (Guide pâturage) + suivi maïs/blé par date de semis
+  Gel et chaleur         — heatmap T° max 12 mois glissants + calendrier des gelées
+  Stress thermique bovin — ITH mensuel par classe de confort vs réf. 1995-2024
+  Records                — valeurs extrêmes depuis 1994
 
 Formules et sources
 ───────────────────
@@ -1455,7 +1456,7 @@ def rendre_html(ctx: dict) -> str:
   <button class="tab-btn"       id="btn-bilan"   role="tab" aria-selected="false" aria-controls="bilan"   data-cible="bilan">Bilan hydrique</button>
   <button class="tab-btn"       id="btn-pheno"   role="tab" aria-selected="false" aria-controls="pheno"   data-cible="pheno">Phénologie</button>
   <button class="tab-btn"       id="btn-gel"     role="tab" aria-selected="false" aria-controls="gel"     data-cible="gel">Gel et chaleur</button>
-  <button class="tab-btn"       id="btn-heatmap" role="tab" aria-selected="false" aria-controls="heatmap" data-cible="heatmap">Heatmap T° max</button>
+  <button class="tab-btn"       id="btn-stress"  role="tab" aria-selected="false" aria-controls="stress"  data-cible="stress">🐄 Stress thermique bovin</button>
   <button class="tab-btn"       id="btn-records" role="tab" aria-selected="false" aria-controls="records" data-cible="records">Records</button>
 </div>
 
@@ -1566,10 +1567,15 @@ def rendre_html(ctx: dict) -> str:
 </div>
 
 <div id="gel" class="panneau" role="tabpanel" aria-labelledby="btn-gel" tabindex="0">
-  <h2>Gelées {ctx['annee']} — calendrier annuel (Tn journalière)</h2>
-  {gc_html}
+  <h2>T° max — 12 mois glissants ({ctx['heatmap']['periode']})</h2>
+  {heatmap_html}
 
-  <h2 style="margin-top:28px">Stress thermique bovin (ITH) — {ctx['annee']}</h2>
+  <h2 style="margin-top:28px">Gelées {ctx['annee']} — calendrier annuel (Tn journalière)</h2>
+  {gc_html}
+</div>
+
+<div id="stress" class="panneau" role="tabpanel" aria-labelledby="btn-stress" tabindex="0">
+  <h2>🐄 Stress thermique bovin (ITH) — {ctx['annee']}</h2>
   {gc_alerte_html}
   <div class="legende">
     <span class="leg-ith-ok">Confort (ITH &lt; 68)</span>
@@ -1585,11 +1591,6 @@ def rendre_html(ctx: dict) -> str:
     recommandations stress thermique bovin. Barres = jours par classe ITH en
     {ctx['annee']} · Ligne pointillée = total jours de stress moyen 1995-2024.
   </p>
-</div>
-
-<div id="heatmap" class="panneau" role="tabpanel" aria-labelledby="btn-heatmap" tabindex="0">
-  <h2>T° max — 12 mois glissants ({ctx['heatmap']['periode']})</h2>
-  {heatmap_html}
 </div>
 
 <div id="records" class="panneau" role="tabpanel" aria-labelledby="btn-records" tabindex="0">
