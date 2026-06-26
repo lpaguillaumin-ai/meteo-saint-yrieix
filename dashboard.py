@@ -671,11 +671,29 @@ def rendre_gel_chaleur_html(gc: dict) -> str:
 
 # ── Phénologie — degrés-jours de croissance ───────────────────────────────────
 
-# Onglet « herbe » conservé : cumul annuel base 0 °C depuis le 1ᵉʳ janvier.
-BASES_GDD = [0]
+# Onglet « herbe » : somme des températures de gestion du pâturage selon le
+# Guide du pâturage (Programme Herbe & Fourrages en Limousin, 2013).
+#   • base 0 °C, départ le 1ᵉʳ février ;
+#   • moyenne journalière (TN+TX)/2 bornée : plancher 0 °C, plafond 18 °C.
+HERBE_DEPART = (2, 1)        # 1ᵉʳ février
+HERBE_PLAFOND = 18.0         # plafond appliqué à la moyenne journalière (°C)
+
+# Seuils de gestion du pâturage (Guide, p. 21) — °C·j cumulés depuis le 1ᵉʳ fév.
 SEUILS_PHENO = [
-    {"base": 0,  "valeur": 200,  "libelle": "Démarrage pousse de l'herbe",
-     "detail": "200 DJC base 0 °C — INRAE / ARVALIS"},
+    {"valeur": 350,  "libelle": "Début de la mise à l'herbe",
+     "detail": "300-350 °C·j — Guide du pâturage Limousin"},
+    {"valeur": 550,  "libelle": "Fin du déprimage",
+     "detail": "550 °C·j — Guide du pâturage Limousin"},
+    {"valeur": 650,  "libelle": "Calcul des jours d'avance",
+     "detail": "650 °C·j — prévision de fauche des excédents"},
+    {"valeur": 750,  "libelle": "Fin du 1ᵉʳ cycle de pâturage",
+     "detail": "750 °C·j — sur la surface de base"},
+    {"valeur": 900,  "libelle": "Fauche précoce",
+     "detail": "900 °C·j — Guide du pâturage Limousin"},
+    {"valeur": 1150, "libelle": "Fin du 2ᵉ cycle de pâturage",
+     "detail": "1150 °C·j — Guide du pâturage Limousin"},
+    {"valeur": 1400, "libelle": "Limite de fauche (parcelles non étêtées)",
+     "detail": "1400 °C·j — au-delà, valeur fourragère médiocre"},
 ]
 
 # ── Cultures pilotées par la date de semis (calcul interactif côté navigateur) ──
@@ -722,11 +740,19 @@ def _inc_mais(tn: float, tx: float) -> float:
     return max(0.0, (tn_e + tx_e) / 2.0 - MAIS_BASE)
 
 
-def _gdd_annee(jours: list[dict], base: float) -> list[float]:
+def _inc_herbe(tn: float, tx: float) -> float:
+    """Incrément journalier de la somme de gestion du pâturage (Guide Limousin) :
+    moyenne (TN+TX)/2 bornée entre 0 °C et 18 °C."""
+    return min(HERBE_PLAFOND, max(0.0, (tn + tx) / 2.0))
+
+
+def _somme_herbe(jours: list[dict]) -> list[float]:
+    """Cumul des incréments herbe à partir du 1ᵉʳ février de chaque année."""
     cumul, serie = 0.0, []
     for j in sorted(jours, key=lambda x: x["date"]):
-        if j["TN"] is not None and j["TX"] is not None:
-            cumul += max(0.0, (j["TN"] + j["TX"]) / 2 - base)
+        depart = date(j["date"].year, *HERBE_DEPART)
+        if j["date"] >= depart and j["TN"] is not None and j["TX"] is not None:
+            cumul += _inc_herbe(j["TN"], j["TX"])
         serie.append(round(cumul, 1))
     return serie
 
@@ -735,52 +761,49 @@ def construire_phenologie(quotidien: list[dict], historique: list[dict], annee: 
     jours_an = sorted([j for j in quotidien if j["date"].year == annee], key=lambda j: j["date"])
     labels = [j["date"].strftime("%d/%m") for j in jours_an]
 
-    # GDD cumulés année en cours
-    gdd = {b: _gdd_annee(jours_an, b) for b in BASES_GDD}
+    # Somme de gestion du pâturage (base 0, 1ᵉʳ fév., plafond 18 °C) — année en cours
+    gdd = _somme_herbe(jours_an)
 
-    # Référence P50 par DOY sur 1995-2024
-    gdd_doy: dict[int, dict[int, list[float]]] = {b: {} for b in BASES_GDD}
+    # Référence médiane par DOY sur 1995-2024 (même méthode)
+    gdd_doy: dict[int, list[float]] = {}
     for an_h in range(ANNEE_REF_DEBUT, ANNEE_REF_FIN + 1):
         jh = sorted([j for j in historique if j["date"].year == an_h], key=lambda j: j["date"])
         if not jh:
             continue
-        c = {b: 0.0 for b in BASES_GDD}
+        c = 0.0
+        depart = date(an_h, *HERBE_DEPART)
         for j in jh:
-            if j["TN"] is not None and j["TX"] is not None:
-                for b in BASES_GDD:
-                    c[b] += max(0.0, (j["TN"] + j["TX"]) / 2 - b)
+            if j["date"] >= depart and j["TN"] is not None and j["TX"] is not None:
+                c += _inc_herbe(j["TN"], j["TX"])
             doy = j["date"].timetuple().tm_yday
-            for b in BASES_GDD:
-                gdd_doy[b].setdefault(doy, []).append(c[b])
+            gdd_doy.setdefault(doy, []).append(c)
 
-    gdd_ref: dict[int, list[float | None]] = {}
-    for b in BASES_GDD:
-        serie = []
-        for j in jours_an:
-            vals = sorted(gdd_doy[b].get(j["date"].timetuple().tm_yday, []))
-            serie.append(round(vals[len(vals) // 2], 1) if vals else None)
-        gdd_ref[b] = serie
+    gdd_ref: list[float | None] = []
+    for j in jours_an:
+        vals = sorted(gdd_doy.get(j["date"].timetuple().tm_yday, []))
+        gdd_ref.append(round(vals[len(vals) // 2], 1) if vals else None)
 
     # Seuils : date de franchissement et médiane historique
     seuils = []
     for s in SEUILS_PHENO:
-        b, seuil = s["base"], s["valeur"]
+        seuil = s["valeur"]
         # Date de franchissement cette année
         date_an = None
-        for i, val in enumerate(gdd[b]):
+        for i, val in enumerate(gdd):
             if val >= seuil:
                 date_an = jours_an[i]["date"].strftime("%d/%m")
                 break
-        gdd_actuel = gdd[b][-1] if gdd[b] else 0.0
+        gdd_actuel = gdd[-1] if gdd else 0.0
 
         # Médiane historique (DOY → date)
         doys_hist = []
         for an_h in range(ANNEE_REF_DEBUT, ANNEE_REF_FIN + 1):
             jh = sorted([j for j in historique if j["date"].year == an_h], key=lambda j: j["date"])
             c_h = 0.0
+            depart = date(an_h, *HERBE_DEPART)
             for j in jh:
-                if j["TN"] is not None and j["TX"] is not None:
-                    c_h += max(0.0, (j["TN"] + j["TX"]) / 2 - b)
+                if j["date"] >= depart and j["TN"] is not None and j["TX"] is not None:
+                    c_h += _inc_herbe(j["TN"], j["TX"])
                     if c_h >= seuil:
                         doys_hist.append(j["date"].timetuple().tm_yday)
                         break
@@ -798,14 +821,14 @@ def construire_phenologie(quotidien: list[dict], historique: list[dict], annee: 
             **s,
             "date_an": date_an,
             "gdd_actuel": round(gdd_actuel, 0),
-            "pct": min(100, int(gdd_actuel / seuil * 100)),
+            "pct": min(100, int(gdd_actuel / seuil * 100)) if seuil else 0,
             "ref_med": ref_med,
         })
 
     return {
         "labels": labels,
-        "gdd":     {str(b): gdd[b]     for b in BASES_GDD},
-        "gdd_ref": {str(b): gdd_ref[b] for b in BASES_GDD},
+        "gdd":     gdd,
+        "gdd_ref": gdd_ref,
         "seuils": seuils,
         "annee": annee,
     }
@@ -1218,6 +1241,7 @@ def rendre_html(ctx: dict) -> str:
 <title>Météo St-Yrieix · {ctx['mois_titre']}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <style>
   :root {{
     --bg: #1a1f26; --bg-carte: #232a33; --bg-section: #1f252d;
@@ -1478,11 +1502,15 @@ def rendre_html(ctx: dict) -> str:
 </div>
 
 <div id="pheno" class="panneau" role="tabpanel" aria-labelledby="btn-pheno" tabindex="0">
-  <h2>Herbe {ctx['annee']} — degrés-jours base 0 °C depuis le 1ᵉʳ janvier</h2>
+  <h2>Herbe {ctx['annee']} — somme des températures de gestion du pâturage (base 0 °C, depuis le 1ᵉʳ février)</h2>
   <div class="legende">
-    <span class="leg-b0">Herbe base 0 °C (trait plein · pointillés = méd. 1995-2024)</span>
+    <span class="leg-b0">Cumul {ctx['annee']} (trait plein · pointillés = méd. 1995-2024)</span>
   </div>
-  <canvas id="pheno_chart" style="max-height:300px" role="img" aria-label="Herbe {ctx['annee']} : degrés-jours cumulés base 0 °C et médiane historique 1995-2024"></canvas>
+  <canvas id="pheno_chart" style="max-height:360px" role="img" aria-label="Herbe {ctx['annee']} : somme des températures de gestion du pâturage (base 0 °C, départ 1ᵉʳ février, plafond 18 °C) et médiane historique 1995-2024"></canvas>
+  <p class="cult-note">
+    Σ de la moyenne journalière (TN+TX)/2 bornée entre 0 °C et 18 °C, cumulée depuis le 1ᵉʳ février ·
+    seuils de gestion : <em>Guide du pâturage — Programme Herbe &amp; Fourrages en Limousin (2013)</em>.
+  </p>
   <div class="pheno-table-wrap">
     <table class="pheno-table">
       <thead><tr>
@@ -1690,29 +1718,43 @@ new Chart(document.getElementById('ith_chart'), {{
   }}
 }});
 
-// ── Herbe : cumul annuel base 0 °C ──────────────────────────────────────────
-new Chart(document.getElementById('pheno_chart'), {{
-  type: 'line',
-  data: {{
-    labels: DATA.pheno.labels,
-    datasets: [
-      {{ label: 'Herbe base 0 °C', data: DATA.pheno.gdd['0'],
-         borderColor: '#56b85e', borderWidth: 2.5, pointRadius: 0, tension: 0.2, spanGaps: true }},
-      {{ label: 'Réf. base 0 °C', data: DATA.pheno.gdd_ref['0'],
-         borderColor: '#56b85e', borderDash: [4,4], borderWidth: 1.2, pointRadius: 0, tension: 0.2, spanGaps: true }},
-      {{ label: '200 °C·j (herbe)', data: Array(DATA.pheno.labels.length).fill(200),
-         borderColor: 'rgba(86,184,94,0.45)', borderDash: [2,5], borderWidth: 1, pointRadius: 0 }},
-    ],
-  }},
-  options: {{
-    responsive: true, maintainAspectRatio: false,
-    plugins: {{ legend: {{ display: false }} }},
-    scales: {{
-      x: {{ ticks: {{ maxTicksLimit: 12, autoSkip: true }} }},
-      y: {{ title: {{ display: true, text: '°C·j cumulés' }}, min: 0 }},
+// ── Herbe : somme de gestion du pâturage (base 0, 1ᵉʳ fév., plafond 18 °C) ────
+(function() {{
+  // Lignes-seuils du Guide du pâturage (p. 21), générées depuis les données.
+  var seuilsAnno = {{}};
+  DATA.pheno.seuils.forEach(function(s, i) {{
+    seuilsAnno['seuil' + i] = {{
+      type: 'line', yMin: s.valeur, yMax: s.valeur,
+      borderColor: 'rgba(214,140,30,0.55)', borderWidth: 1, borderDash: [4,4],
+      label: {{
+        display: true, content: s.valeur + ' °C — ' + s.libelle,
+        position: (i % 2 === 0) ? 'start' : 'end',
+        backgroundColor: 'rgba(255,255,255,0.78)',
+        color: '#9a6a10', font: {{ size: 10 }}, padding: 2, yAdjust: -7
+      }}
+    }};
+  }});
+  new Chart(document.getElementById('pheno_chart'), {{
+    type: 'line',
+    data: {{
+      labels: DATA.pheno.labels,
+      datasets: [
+        {{ label: 'Cumul {ctx['annee']}', data: DATA.pheno.gdd,
+           borderColor: '#56b85e', borderWidth: 2.5, pointRadius: 0, tension: 0.2, spanGaps: true }},
+        {{ label: 'Médiane 1995-2024', data: DATA.pheno.gdd_ref,
+           borderColor: '#56b85e', borderDash: [4,4], borderWidth: 1.2, pointRadius: 0, tension: 0.2, spanGaps: true }},
+      ],
     }},
-  }}
-}});
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ display: false }}, annotation: {{ annotations: seuilsAnno }} }},
+      scales: {{
+        x: {{ ticks: {{ maxTicksLimit: 12, autoSkip: true }} }},
+        y: {{ title: {{ display: true, text: '°C·j cumulés depuis le 1ᵉʳ février' }}, min: 0 }},
+      }},
+    }}
+  }});
+}})();
 
 // ── Cultures pilotées par la date de semis (calcul interactif) ───────────────
 (function() {{
