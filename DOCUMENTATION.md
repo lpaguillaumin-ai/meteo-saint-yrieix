@@ -151,29 +151,43 @@ La courbe de référence est la **moyenne** de ce cumul, calculée sur 1995–20
 
 ## 4. Onglet — Phénologie
 
-L'onglet se compose de **trois blocs** : un suivi annuel de l'herbe (base 0 °C),
-puis deux sections **maïs** et **blé** pilotées par une **date de semis saisie par
-l'utilisateur** et recalculées en direct dans le navigateur.
+L'onglet se compose de **trois blocs** : un suivi annuel de l'herbe (somme des
+températures de gestion du pâturage), puis deux sections **maïs** et **blé** pilotées
+par une **date de semis saisie par l'utilisateur** et recalculées en direct dans le
+navigateur.
 
-### 4.1 Herbe — cumul annuel base 0 °C
+### 4.1 Herbe — somme des températures de gestion du pâturage
 
-**Graphique** : degrés-jours de croissance cumulés depuis le 1er janvier en base 0 °C,
-en trait plein (année en cours) et pointillés (médiane historique 1995–2024), avec une
-ligne horizontale au seuil de 200 °C·j.
+Méthode du **Guide du pâturage** (Programme Structurel Herbe & Fourrages en Limousin,
+2013). La somme est calculée en **base 0 °C à partir du 1er février**, avec une moyenne
+journalière **bornée entre 0 °C et 18 °C** (au-delà de 18 °C de moyenne, on ne compte
+que 18). C'est cette somme qui calibre les seuils de gestion ci-dessous.
 
-**Tableau** : DJC actuel avec barre de progression, date de franchissement cette année
+**Graphique** : somme cumulée depuis le 1er février, en trait plein (année en cours) et
+pointillés (médiane historique 1995–2024), avec les **lignes-seuils de gestion** du
+Guide (tracées via le plugin `chartjs-plugin-annotation`).
+
+**Tableau** : cumul actuel avec barre de progression, date de franchissement cette année
 (ou « en cours »), et date médiane historique 1995–2024.
 
 ```
-DJC_jour(0) = max(0, (TN + TX) / 2)
-DJC_cumulé(J) = Σ DJC_jour(0)  du 1er janvier au jour J
+DJC_jour = min(18, max(0, (TN + TX) / 2))      # plancher 0 °C, plafond 18 °C
+DJC_cumulé(J) = Σ DJC_jour  du 1er février au jour J
 ```
 
-| Seuil | Base | Valeur | Signification | Source |
-|---|---|---|---|---|
-| Démarrage pousse de l'herbe | 0 °C | 200 °C·j | Reprise de croissance herbacée | INRAE / ARVALIS |
+| Seuil | Valeur | Signification |
+|---|---|---|
+| Début de la mise à l'herbe | 300–350 °C·j | Démarrage du pâturage (surface de base ou complémentaire) |
+| Fin du déprimage | 550 °C·j | Fin du premier passage rapide |
+| Calcul des jours d'avance | 650 °C·j | Prévision de fauche des excédents |
+| Fin du 1ᵉʳ cycle de pâturage | 750 °C·j | Sur la surface de base |
+| Fauche précoce | 900 °C·j | — |
+| Fin du 2ᵉ cycle de pâturage | 1 150 °C·j | — |
+| Limite de fauche (parcelles non étêtées) | 1 400 °C·j | Au-delà : valeur fourragère médiocre |
 
-> **Référence DJC** : McMaster G.S. & Wilhelm W.W., *Agricultural and Forest Meteorology*, 87(4), 1997.
+> **Source des seuils** : *Guide du pâturage*, Programme Structurel Herbe & Fourrages en
+> Limousin (juillet 2013), p. 21. Seuils et méthode ajustables dans `dashboard.py`
+> (`SEUILS_PHENO`, `HERBE_DEPART`, `HERBE_PLAFOND`).
 
 ### 4.2 Maïs — suivi depuis la date de semis (modèle farmi)
 
@@ -238,6 +252,8 @@ précocité) sont **mémorisées** d'une visite à l'autre via `localStorage`.
 
 | Constante | Rôle |
 |---|---|
+| `HERBE_DEPART`, `HERBE_PLAFOND` | date de départ (1ᵉʳ fév.) et plafond (18 °C) de la somme herbe |
+| `SEUILS_PHENO` | seuils de gestion du pâturage (Guide Limousin, p. 21) |
 | `MAIS_BASE`, `MAIS_TX_PLAFOND`, `MAIS_TN_PLANCHER` | base et plafonds farmi du maïs |
 | `MAIS_PRECOCITES` | seuils de maturité par groupe de précocité |
 | `MAIS_STADES` | stades maïs (levée, floraison, maturité) |
