@@ -1273,10 +1273,7 @@ def rendre_html(ctx: dict) -> str:
   .tendance-up::before  {{ content: "↗ "; color: var(--hausse); }}
   .tendance-down::before {{ content: "↘ "; color: var(--baisse); }}
   /* Onglets */
-  .tabs {{ display: flex; gap: 4px; margin-bottom: 0;
-           overflow-x: auto; -webkit-overflow-scrolling: touch;
-           scrollbar-width: none; }}
-  .tabs::-webkit-scrollbar {{ display: none; }}
+  .tabs {{ display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 0; }}
   .tab-btn {{ background: var(--bg-carte); color: var(--texte-doux);
               border: 1px solid var(--bord); border-bottom: none;
               padding: 8px 14px; border-radius: 6px 6px 0 0;
