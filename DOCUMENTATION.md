@@ -5,6 +5,9 @@ Source des données : [meteo.data.gouv.fr](https://meteo.data.gouv.fr), jeu de d
 *Données climatologiques de base — quotidiennes*  
 Période de référence (normales) : **1995–2024**
 
+L'interface se compose de six onglets : **📅 Mois en cours**, **💧 Bilan hydrique**,
+**🌱 Phénologie**, **🌡️ Gel et chaleur**, **🐄 Stress thermique** et **🏆 Records**.
+
 ---
 
 ## Sommaire
@@ -14,7 +17,7 @@ Période de référence (normales) : **1995–2024**
 3. [Onglet — Bilan hydrique](#3-onglet--bilan-hydrique)
 4. [Onglet — Phénologie](#4-onglet--phénologie)
 5. [Onglet — Gel et chaleur](#5-onglet--gel-et-chaleur)
-6. [Onglet — Stress thermique bovin](#6-onglet--stress-thermique-bovin)
+6. [Onglet — Stress thermique](#6-onglet--stress-thermique)
 7. [Onglet — Records](#7-onglet--records)
 8. [Normales de référence](#8-normales-de-référence)
 9. [Limites et précautions](#9-limites-et-précautions)
@@ -286,7 +289,10 @@ Saison sans gel (j) = date 1ère gelée d'automne − date dernière gelée de p
 
 ---
 
-## 6. Onglet — Stress thermique bovin
+## 6. Onglet — Stress thermique
+
+> Libellé d'onglet : **🐄 Stress thermique**. Le titre interne du panneau précise
+> *Stress thermique bovin (ITH)*.
 
 ### Ce qui est affiché
 
