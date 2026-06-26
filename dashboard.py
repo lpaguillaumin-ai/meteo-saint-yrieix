@@ -416,7 +416,7 @@ def rendre_heatmap_html(heatmap: dict) -> str:
     return f"""
     <div class="heatmap-wrapper">
       <div class="heatmap-scroll">
-        <div class="hm-mois-row" style="grid-template-columns:repeat({heatmap['nb_semaines']},14px)">
+        <div class="hm-mois-row" style="grid-template-columns:repeat({heatmap['nb_semaines']}, var(--hm-cell))">
           {''.join(etiquettes)}
         </div>
         <div class="hm-grid">
@@ -626,7 +626,7 @@ def rendre_gel_chaleur_html(gc: dict) -> str:
 
     cal_section = f"""<div class="heatmap-wrapper">
   <div class="heatmap-scroll">
-    <div class="hm-mois-row" style="grid-template-columns:repeat({nb_sem},14px)">{etiq_html}</div>
+    <div class="hm-mois-row" style="grid-template-columns:repeat({nb_sem}, var(--hm-cell))">{etiq_html}</div>
     <div class="hm-grid">
       <div class="hm-jours">
         <span></span><span>mar</span><span></span><span>jeu</span><span></span><span>sam</span><span></span>
@@ -1299,17 +1299,22 @@ def rendre_html(ctx: dict) -> str:
   .leg-bilan::before {{ color: #56b85e; }}
   canvas {{ max-height: 360px; }}
   /* Heatmap */
-  .heatmap-wrapper {{ overflow: hidden; }}
+  .heatmap-wrapper {{ overflow: hidden; --hm-cell: 14px; --hm-gap: 2px; --hm-jours-w: 22px; }}
   .heatmap-scroll {{ overflow-x: auto; padding-bottom: 6px; }}
-  .hm-mois-row {{ display: grid; margin-left: 32px; font-size: 11px;
+  /* La grille des mois partage exactement le pas des colonnes de cellules
+     (largeur var(--hm-cell) + gap var(--hm-gap)) et le décalage de la colonne
+     des jours (var(--hm-jours-w) + gap de .hm-grid) → alignement garanti. */
+  .hm-mois-row {{ display: grid; gap: var(--hm-gap);
+                  margin-left: calc(var(--hm-jours-w) + 4px); font-size: 11px;
                   color: var(--texte-doux); margin-bottom: 4px; }}
   .hm-grid {{ display: flex; gap: 4px; }}
-  .hm-jours {{ display: grid; grid-template-rows: repeat(7, 14px); gap: 2px;
-               font-size: 10px; color: var(--texte-doux); padding-right: 4px; }}
-  .hm-jours span {{ line-height: 14px; }}
-  .hm-cols {{ display: flex; gap: 2px; }}
-  .hm-col {{ display: grid; grid-template-rows: repeat(7, 14px); gap: 2px; }}
-  .hm-cell {{ width: 14px; height: 14px; border-radius: 2px; }}
+  .hm-jours {{ display: grid; grid-template-rows: repeat(7, var(--hm-cell)); gap: var(--hm-gap);
+               width: var(--hm-jours-w); font-size: 10px; color: var(--texte-doux);
+               padding-right: 4px; }}
+  .hm-jours span {{ line-height: var(--hm-cell); }}
+  .hm-cols {{ display: flex; gap: var(--hm-gap); }}
+  .hm-col {{ display: grid; grid-template-rows: repeat(7, var(--hm-cell)); gap: var(--hm-gap); }}
+  .hm-cell {{ width: var(--hm-cell); height: var(--hm-cell); border-radius: 2px; }}
   .hm-cell.hm-vide {{ background: transparent; }}
   .hm-mois {{ grid-row: 1; }}
   .hm-legende {{ display: flex; align-items: center; gap: 6px;
@@ -1431,8 +1436,7 @@ def rendre_html(ctx: dict) -> str:
     .panneau h2 {{ font-size: 12px; }}
     .legende {{ font-size: 11px; gap: 8px; }}
     canvas {{ max-height: 240px; }}
-    .hm-cell {{ width: 11px; height: 11px; }}
-    .hm-jours, .hm-col {{ grid-template-rows: repeat(7, 11px); }}
+    .heatmap-wrapper {{ --hm-cell: 11px; }}
     .rec-tuiles {{ gap: 8px; }}
     .rec-tuile {{ padding: 10px; }}
     .rec-val-big {{ font-size: 20px; }}

@@ -62,17 +62,22 @@
   .leg-bilan::before { color: #56b85e; }
   canvas { max-height: 360px; }
   /* Heatmap */
-  .heatmap-wrapper { overflow: hidden; }
+  .heatmap-wrapper { overflow: hidden; --hm-cell: 14px; --hm-gap: 2px; --hm-jours-w: 22px; }
   .heatmap-scroll { overflow-x: auto; padding-bottom: 6px; }
-  .hm-mois-row { display: grid; margin-left: 32px; font-size: 11px;
+  /* La grille des mois partage exactement le pas des colonnes de cellules
+     (largeur var(--hm-cell) + gap var(--hm-gap)) et le décalage de la colonne
+     des jours (var(--hm-jours-w) + gap de .hm-grid) → alignement garanti. */
+  .hm-mois-row { display: grid; gap: var(--hm-gap);
+                  margin-left: calc(var(--hm-jours-w) + 4px); font-size: 11px;
                   color: var(--texte-doux); margin-bottom: 4px; }
   .hm-grid { display: flex; gap: 4px; }
-  .hm-jours { display: grid; grid-template-rows: repeat(7, 14px); gap: 2px;
-               font-size: 10px; color: var(--texte-doux); padding-right: 4px; }
-  .hm-jours span { line-height: 14px; }
-  .hm-cols { display: flex; gap: 2px; }
-  .hm-col { display: grid; grid-template-rows: repeat(7, 14px); gap: 2px; }
-  .hm-cell { width: 14px; height: 14px; border-radius: 2px; }
+  .hm-jours { display: grid; grid-template-rows: repeat(7, var(--hm-cell)); gap: var(--hm-gap);
+               width: var(--hm-jours-w); font-size: 10px; color: var(--texte-doux);
+               padding-right: 4px; }
+  .hm-jours span { line-height: var(--hm-cell); }
+  .hm-cols { display: flex; gap: var(--hm-gap); }
+  .hm-col { display: grid; grid-template-rows: repeat(7, var(--hm-cell)); gap: var(--hm-gap); }
+  .hm-cell { width: var(--hm-cell); height: var(--hm-cell); border-radius: 2px; }
   .hm-cell.hm-vide { background: transparent; }
   .hm-mois { grid-row: 1; }
   .hm-legende { display: flex; align-items: center; gap: 6px;
@@ -194,8 +199,7 @@
     .panneau h2 { font-size: 12px; }
     .legende { font-size: 11px; gap: 8px; }
     canvas { max-height: 240px; }
-    .hm-cell { width: 11px; height: 11px; }
-    .hm-jours, .hm-col { grid-template-rows: repeat(7, 11px); }
+    .heatmap-wrapper { --hm-cell: 11px; }
     .rec-tuiles { gap: 8px; }
     .rec-tuile { padding: 10px; }
     .rec-val-big { font-size: 20px; }
@@ -357,7 +361,7 @@
   
     <div class="heatmap-wrapper">
       <div class="heatmap-scroll">
-        <div class="hm-mois-row" style="grid-template-columns:repeat(53,14px)">
+        <div class="hm-mois-row" style="grid-template-columns:repeat(53, var(--hm-cell))">
           <div class="hm-mois" style="grid-column:1">juin</div><div class="hm-mois" style="grid-column:3">juil.</div><div class="hm-mois" style="grid-column:7">août</div><div class="hm-mois" style="grid-column:11">sept.</div><div class="hm-mois" style="grid-column:16">oct.</div><div class="hm-mois" style="grid-column:20">nov.</div><div class="hm-mois" style="grid-column:24">déc.</div><div class="hm-mois" style="grid-column:29">janv.</div><div class="hm-mois" style="grid-column:33">févr.</div><div class="hm-mois" style="grid-column:37">mars</div><div class="hm-mois" style="grid-column:42">avr.</div><div class="hm-mois" style="grid-column:46">mai</div><div class="hm-mois" style="grid-column:50">juin</div>
         </div>
         <div class="hm-grid">
@@ -377,7 +381,7 @@
   <h2 style="margin-top:28px">Gelées 2026 — calendrier annuel (Tn journalière)</h2>
   <div class="heatmap-wrapper">
   <div class="heatmap-scroll">
-    <div class="hm-mois-row" style="grid-template-columns:repeat(53,14px)"><div class="hm-mois" style="grid-column:1">déc.</div><div class="hm-mois" style="grid-column:2">janv.</div><div class="hm-mois" style="grid-column:6">févr.</div><div class="hm-mois" style="grid-column:10">mars</div><div class="hm-mois" style="grid-column:15">avr.</div><div class="hm-mois" style="grid-column:19">mai</div><div class="hm-mois" style="grid-column:23">juin</div><div class="hm-mois" style="grid-column:28">juil.</div><div class="hm-mois" style="grid-column:32">août</div><div class="hm-mois" style="grid-column:37">sept.</div><div class="hm-mois" style="grid-column:41">oct.</div><div class="hm-mois" style="grid-column:45">nov.</div><div class="hm-mois" style="grid-column:50">déc.</div></div>
+    <div class="hm-mois-row" style="grid-template-columns:repeat(53, var(--hm-cell))"><div class="hm-mois" style="grid-column:1">déc.</div><div class="hm-mois" style="grid-column:2">janv.</div><div class="hm-mois" style="grid-column:6">févr.</div><div class="hm-mois" style="grid-column:10">mars</div><div class="hm-mois" style="grid-column:15">avr.</div><div class="hm-mois" style="grid-column:19">mai</div><div class="hm-mois" style="grid-column:23">juin</div><div class="hm-mois" style="grid-column:28">juil.</div><div class="hm-mois" style="grid-column:32">août</div><div class="hm-mois" style="grid-column:37">sept.</div><div class="hm-mois" style="grid-column:41">oct.</div><div class="hm-mois" style="grid-column:45">nov.</div><div class="hm-mois" style="grid-column:50">déc.</div></div>
     <div class="hm-grid">
       <div class="hm-jours">
         <span></span><span>mar</span><span></span><span>jeu</span><span></span><span>sam</span><span></span>
