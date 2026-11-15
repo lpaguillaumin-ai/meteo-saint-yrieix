@@ -804,7 +804,10 @@ function exporterCSV() {
   if (window.parent === window) return;
   var derniere = 0;
   function envoyer() {
-    var h = Math.ceil(document.documentElement.scrollHeight);
+    // Hauteur du contenu (body), et non scrollHeight du document, qui vaut au moins la hauteur du cadre :
+    // sinon chaque agrandissement du cadre relancerait un message plus grand (boucle).
+    var cs = getComputedStyle(document.body);
+    var h = Math.ceil(document.body.getBoundingClientRect().height + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom));
     if (h !== derniere) {
       derniere = h;
       window.parent.postMessage({ type: 'meteo-st-yrieix:hauteur', hauteur: h }, '*');
