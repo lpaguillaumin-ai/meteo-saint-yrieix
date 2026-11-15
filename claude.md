@@ -8,7 +8,7 @@
 
 \- Objectif : pipeline automatique téléchargement → parsing → graphiques publiés
 
-\- Page de publication actuelle : eplefpa-saint-yrieix.fr/presentation/meteo-2025/
+\- Page de publication actuelle : eplefpa-saint-yrieix.fr/presentation/meteo/ (iframe de docs/index.html?theme=clair, hauteur ajustée par postMessage)
 
 \- Normales de référence : 1995-2024, station 87187003 (St-Yrieix-la-Perche)
 

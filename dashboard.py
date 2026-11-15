@@ -1241,8 +1241,12 @@ def rendre_html(ctx: dict) -> str:
 <meta charset="utf-8">
 <title>Météo St-Yrieix · {ctx['mois_titre']}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script>
+  // Thème clair pour l'intégration dans le site du campus : page?theme=clair
+  if (new URLSearchParams(location.search).get('theme') === 'clair') document.documentElement.classList.add('clair');
+</script>
+<script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/chartjs-plugin-annotation.min.js"></script>
 <style>
   :root {{
     --bg: #1a1f26; --bg-carte: #232a33; --bg-section: #1f252d;
@@ -1439,6 +1443,28 @@ def rendre_html(ctx: dict) -> str:
     .rec-val-big {{ font-size: 20px; }}
     .rec-table {{ font-size: 12px; }}
   }}
+
+  /* ---------- Thème clair (?theme=clair), contrastes AA sur fond clair ---------- */
+  :root.clair {{
+    --bg: #F5F3ED; --bg-carte: #FFFFFF; --bg-section: #FBFAF6;
+    --texte: #1F2A22; --texte-doux: #46534B;
+    --accent-pluie: #1f6fb8; --accent-tx: #b8352a; --accent-tn: #1f7fb0;
+    --bord: #DCE4DF; --hausse: #9a5b00; --baisse: #2e7d32;
+  }}
+  :root.clair body {{ font-family: Montserrat, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px 8px; }}
+  :root.clair .tab-btn.actif {{ box-shadow: inset 0 -3px 0 #214D3B; }}
+  :root.clair .pheno-table tbody tr:hover, :root.clair .rec-table tbody tr:hover {{ background: rgba(0,0,0,0.03); }}
+  :root.clair .ith-alerte {{ color: #8f2a20; }}
+  :root.clair .cult-badge, :root.clair .rec-badge {{ color: #1F2A22; }}
+  /* Cases « hors gel » et « données manquantes » du calendrier (couleurs écrites dans le HTML). */
+  :root.clair [style*="background:#1e2830"] {{ background: #E9E6DC !important; }}
+  :root.clair [style*="background:#2a313b"] {{ background: #F0EEE7 !important; }}
+  /* Textes colorés écrits dans le HTML : teintes plus foncées pour le contraste sur fond clair. */
+  :root.clair [style*="color:#56b85e"] {{ color: #2e7d32 !important; }}
+  :root.clair [style*="color:#e8995c"] {{ color: #a4501a !important; }}
+  :root.clair [style*="color:#f39c12"] {{ color: #9a5b00 !important; }}
+  :root.clair [style*="color:#e74c3c"] {{ color: #b8352a !important; }}
+  :root.clair [style*="color:#5dade2"], :root.clair [style*="color:#4ea1ff"] {{ color: #1f6fb8 !important; }}
 </style>
 </head>
 <body>
@@ -1605,8 +1631,9 @@ def rendre_html(ctx: dict) -> str:
 
 <script>
 const DATA = {data_json};
-Chart.defaults.color = '#9aa3ad';
-Chart.defaults.borderColor = '#2c333d';
+const CLAIR = document.documentElement.classList.contains('clair');
+Chart.defaults.color = CLAIR ? '#46534B' : '#9aa3ad';
+Chart.defaults.borderColor = CLAIR ? '#DCE4DF' : '#2c333d';
 Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
 new Chart(document.getElementById('detail'), {{
@@ -1636,7 +1663,7 @@ new Chart(document.getElementById('climo'), {{
     labels: DATA.climogramme.labels,
     datasets: [
       {{ type: 'bar',  label: 'Pluie observée', data: DATA.climogramme.rr_reel, backgroundColor: '#4ea1ff', yAxisID: 'y', order: 3 }},
-      {{ type: 'bar',  label: 'Pluie normale',  data: DATA.climogramme.rr_norm, backgroundColor: '#3a4452', yAxisID: 'y', order: 4 }},
+      {{ type: 'bar',  label: 'Pluie normale',  data: DATA.climogramme.rr_norm, backgroundColor: CLAIR ? '#b9c2bb' : '#3a4452', yAxisID: 'y', order: 4 }},
       {{ type: 'line', label: 'T° moyenne',     data: DATA.climogramme.t_reel, borderColor: '#e74c3c',
          backgroundColor: '#e74c3c', tension: 0.3, yAxisID: 'y1', order: 1, spanGaps: true }},
       {{ type: 'line', label: 'T° normale',     data: DATA.climogramme.t_norm, borderColor: '#9aa3ad',
@@ -1682,7 +1709,7 @@ new Chart(document.getElementById('bilan_chart'), {{
       x: {{ ticks: {{ maxTicksLimit: 12, autoSkip: true }} }},
       y:  {{ position: 'left',  title: {{ display: true, text: 'mm cumulés' }}, min: 0 }},
       y1: {{ position: 'right', title: {{ display: true, text: 'P−ETP (mm)' }},
-             grid: {{ color: c => c.tick.value === 0 ? '#56b85e66' : '#2c333d' }} }},
+             grid: {{ color: c => c.tick.value === 0 ? '#56b85e66' : (CLAIR ? '#DCE4DF' : '#2c333d') }} }},
     }},
   }}
 }});
@@ -1951,6 +1978,24 @@ function exporterCSV() {{
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }}
+
+// Intégration dans une autre page (iframe) : envoi de la hauteur du contenu, à chaque changement de taille.
+(function () {{
+  if (window.parent === window) return;
+  var derniere = 0;
+  function envoyer() {{
+    var h = Math.ceil(document.documentElement.scrollHeight);
+    if (h !== derniere) {{
+      derniere = h;
+      window.parent.postMessage({{ type: 'meteo-st-yrieix:hauteur', hauteur: h }}, '*');
+    }}
+  }}
+  window.addEventListener('load', envoyer);
+  window.addEventListener('resize', envoyer);
+  if ('ResizeObserver' in window) new ResizeObserver(envoyer).observe(document.body);
+  document.addEventListener('click', function () {{ setTimeout(envoyer, 50); }});
+  envoyer();
+}})();
 </script>
 </body>
 </html>

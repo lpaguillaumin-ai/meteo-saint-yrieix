@@ -126,3 +126,17 @@ Aucune dépendance externe — uniquement la bibliothèque standard Python.
   cliquer **Run workflow** une fois pour relancer la planification.
 
 Pour la description détaillée de chaque onglet et des formules utilisées, voir [`DOCUMENTATION.md`](DOCUMENTATION.md).
+
+---
+
+## 🖼️ Intégration dans le site du campus
+
+La page est affichée dans le site du campus (`/presentation/meteo/`) par une iframe :
+
+- **Thème clair** : ajouter `?theme=clair` à l'adresse (couleurs du site, contrastes adaptés au fond clair).
+  Sans paramètre, la page garde son thème sombre.
+- **Hauteur automatique** : intégrée dans une iframe, la page envoie sa hauteur à la page parente par
+  `postMessage({ type: 'meteo-st-yrieix:hauteur', hauteur })` (au chargement, au redimensionnement et à chaque
+  changement d'onglet). Le site du campus n'accepte ce message que depuis `https://lpaguillaumin-ai.github.io`.
+- **Bibliothèques** : Chart.js 4.4.0 et chartjs-plugin-annotation 3.0.1 sont servis depuis `docs/vendor/`
+  (licence MIT) et non plus depuis le CDN jsDelivr : aucun service tiers n'est contacté par la page.
