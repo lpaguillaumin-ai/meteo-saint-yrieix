@@ -1242,8 +1242,8 @@ def rendre_html(ctx: dict) -> str:
 <title>Météo St-Yrieix · {ctx['mois_titre']}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>
-  // Thème clair pour l'intégration dans le site du campus : page?theme=clair
-  if (new URLSearchParams(location.search).get('theme') === 'clair') document.documentElement.classList.add('clair');
+  // Thème clair par défaut (couleurs du site du campus) ; thème sombre d'origine avec page?theme=sombre
+  if (new URLSearchParams(location.search).get('theme') !== 'sombre') document.documentElement.classList.add('clair');
 </script>
 <script src="vendor/chart.umd.min.js"></script>
 <script src="vendor/chartjs-plugin-annotation.min.js"></script>
@@ -1444,7 +1444,7 @@ def rendre_html(ctx: dict) -> str:
     .rec-table {{ font-size: 12px; }}
   }}
 
-  /* ---------- Thème clair (?theme=clair), contrastes AA sur fond clair ---------- */
+  /* ---------- Thème clair (par défaut ; ?theme=sombre pour le thème sombre), contrastes AA sur fond clair ---------- */
   :root.clair {{
     --bg: #F5F3ED; --bg-carte: #FFFFFF; --bg-section: #FBFAF6;
     --texte: #1F2A22; --texte-doux: #46534B;

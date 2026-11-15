@@ -133,8 +133,8 @@ Pour la description détaillée de chaque onglet et des formules utilisées, voi
 
 La page est affichée dans le site du campus (`/presentation/meteo/`) par une iframe :
 
-- **Thème clair** : ajouter `?theme=clair` à l'adresse (couleurs du site, contrastes adaptés au fond clair).
-  Sans paramètre, la page garde son thème sombre.
+- **Thème** : clair par défaut (couleurs du site, contrastes adaptés au fond clair) ; ajouter `?theme=sombre`
+  à l'adresse pour retrouver le thème sombre d'origine.
 - **Hauteur automatique** : intégrée dans une iframe, la page envoie sa hauteur à la page parente par
   `postMessage({ type: 'meteo-st-yrieix:hauteur', hauteur })` (au chargement, au redimensionnement et à chaque
   changement d'onglet). Le site du campus n'accepte ce message que depuis `https://lpaguillaumin-ai.github.io`.
